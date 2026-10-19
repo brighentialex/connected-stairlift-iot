@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.Python
+build/
+dist/
+
+# Ambienti virtuali
+.venv/
+venv/
+env/
+
+# Configurazione locale / segreti
+.env
+
+# IDE
+.idea/
+.vscode/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# ---------------------------------------------------------------------------
+# Materiale personale / di studio: resta sul PC, NON va su GitHub
+# ---------------------------------------------------------------------------
+_extra/
+docs/*.pdf
+docs/*.pptx

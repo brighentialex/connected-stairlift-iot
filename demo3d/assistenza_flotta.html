@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Assistenza Connessa &mdash; monitoraggio flotta servoscala</title>
+<style>
+  :root{
+    --bg:#0b0f16; --panel:#111825; --panel2:#0e141f; --stroke:rgba(255,255,255,.08);
+    --txt:#e8eef7; --dim:#8b9bb4; --dim2:#5f6e85;
+    --ok:#25d07a; --warn:#ffb020; --alarm:#ff4d5e; --acc:#3ea6ff;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:
+      radial-gradient(1100px 620px at 12% -10%, rgba(62,166,255,.10), transparent 60%),
+      radial-gradient(900px 520px at 92% 0%, rgba(37,208,122,.07), transparent 55%), var(--bg);
+    color:var(--txt);font-family:Inter,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;padding:26px 26px 60px;min-height:100vh}
+  .wrap{max-width:1320px;margin:0 auto}
+
+  /* ---------------- intestazione ---------------- */
+  header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;
+    flex-wrap:wrap;margin-bottom:22px}
+  .brand{display:flex;align-items:center;gap:13px}
+  .logo{width:40px;height:40px;border-radius:11px;flex:none;
+    background:linear-gradient(140deg,#3ea6ff,#25d07a);display:grid;place-items:center;
+    box-shadow:0 8px 26px rgba(62,166,255,.35)}
+  .logo svg{width:22px;height:22px}
+  h1{font-size:20px;margin:0;letter-spacing:-.02em;font-weight:700}
+  .tag{font-size:12px;color:var(--dim);margin-top:3px}
+  .fleetkpi{display:flex;gap:9px;flex-wrap:wrap}
+  .fk{background:var(--panel);border:1px solid var(--stroke);border-radius:12px;
+    padding:9px 15px;min-width:112px}
+  .fk b{display:block;font-family:var(--mono);font-size:20px;font-weight:700;letter-spacing:-.03em}
+  .fk span{display:block;font-size:8.5px;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--dim);margin-top:4px;font-weight:600}
+
+  h2{font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:var(--dim);
+    margin:30px 0 12px;font-weight:650;display:flex;align-items:center;gap:10px}
+  h2::after{content:"";flex:1;height:1px;background:var(--stroke)}
+  h2 .pill{background:rgba(255,255,255,.06);border:1px solid var(--stroke);border-radius:999px;
+    padding:2px 9px;font-size:9px;letter-spacing:.06em;color:var(--dim)}
+
+  /* ---------------- schede impianto ---------------- */
+  .fleet{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
+  .card{background:var(--panel);border:1px solid var(--stroke);border-radius:16px;padding:16px 17px;
+    cursor:pointer;transition:.18s;position:relative;overflow:hidden}
+  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c)}
+  .card:hover{border-color:rgba(255,255,255,.2);transform:translateY(-2px)}
+  .card.sel{border-color:var(--c);box-shadow:0 0 0 1px var(--c), 0 16px 42px rgba(0,0,0,.5)}
+  .chead{display:flex;align-items:flex-start;gap:12px;margin-bottom:13px}
+  .chead .idb{font-family:var(--mono);font-size:17px;font-weight:750;letter-spacing:-.02em}
+  .chead .edi{font-size:12px;color:var(--dim);margin-top:2px;line-height:1.35}
+  .chead .ring{margin-left:auto;flex:none;position:relative;width:56px;height:56px}
+  .chead .ring b{position:absolute;inset:0;display:grid;place-items:center;
+    font-family:var(--mono);font-size:15px;font-weight:750}
+  .st{display:inline-block;padding:3px 9px;border-radius:999px;font-size:9.5px;font-weight:750;
+    letter-spacing:.07em;text-transform:uppercase;font-family:var(--mono);margin-top:7px}
+  .st.ok{background:rgba(37,208,122,.17);color:var(--ok)}
+  .st.warn{background:rgba(255,176,32,.17);color:var(--warn)}
+  .st.alarm{background:rgba(255,77,94,.19);color:var(--alarm)}
+  .mini{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+  .mini div{background:var(--panel2);border:1px solid var(--stroke);border-radius:9px;padding:7px 6px;text-align:center}
+  .mini b{display:block;font-family:var(--mono);font-size:14px;font-weight:700}
+  .mini span{display:block;font-size:7.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim2);margin-top:3px}
+  .cfoot{display:flex;align-items:center;gap:9px;margin-top:13px}
+  .cfoot .spark{flex:1;height:26px}
+  a.tw,button.tw{font:inherit;font-size:11px;color:var(--txt);text-decoration:none;
+    background:rgba(255,255,255,.06);border:1px solid var(--stroke);border-radius:8px;
+    padding:6px 11px;cursor:pointer;transition:.15s;white-space:nowrap}
+  a.tw:hover,button.tw:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,255,.22)}
+
+  /* ---------------- dettaglio ---------------- */
+  .panel{background:var(--panel);border:1px solid var(--stroke);border-radius:16px;padding:18px 20px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media(max-width:960px){.grid2,.grid3{grid-template-columns:1fr}}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px}
+  .kpi{background:var(--panel2);border:1px solid var(--stroke);border-radius:12px;padding:12px 13px}
+  .kpi b{display:block;font-family:var(--mono);font-size:22px;font-weight:750;letter-spacing:-.035em;line-height:1.1}
+  .kpi b i{font-style:normal;font-size:12px;color:var(--dim);font-weight:600;margin-left:2px}
+  .kpi span{display:block;font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-top:6px;font-weight:600}
+  .kpi em{display:block;font-style:normal;font-size:10.5px;color:var(--dim2);margin-top:5px}
+  .ct{font-size:12px;font-weight:650;margin:0 0 3px}
+  .cs{font-size:10.5px;color:var(--dim2);margin:0 0 11px;line-height:1.45}
+  .lg{display:flex;gap:14px;flex-wrap:wrap;font-size:10.5px;color:var(--dim);margin-top:8px}
+  .lg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+
+  table{width:100%;border-collapse:collapse;font-size:11.5px}
+  th{text-align:left;font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);
+    font-weight:650;padding:0 8px 8px;border-bottom:1px solid var(--stroke)}
+  td{padding:8px;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:top}
+  td.m{font-family:var(--mono)}
+  tr:last-child td{border-bottom:none}
+  .chip{display:inline-block;padding:2px 7px;border-radius:6px;font-size:9.5px;font-weight:700;font-family:var(--mono)}
+  .chip.ok{background:rgba(37,208,122,.16);color:var(--ok)}
+  .chip.late{background:rgba(255,176,32,.16);color:var(--warn)}
+  .chip.miss{background:rgba(255,77,94,.18);color:var(--alarm)}
+
+  .rec{display:flex;gap:11px;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.045);font-size:12px;line-height:1.5}
+  .rec:last-child{border-bottom:none}
+  .rec .ic{width:22px;height:22px;border-radius:7px;flex:none;display:grid;place-items:center;
+    font-size:11px;font-weight:800;font-family:var(--mono)}
+  .rec b{display:block;font-size:12px;margin-bottom:2px}
+  .rec p{margin:0;color:var(--dim);font-size:11.5px}
+
+  footer{margin-top:34px;padding-top:18px;border-top:1px solid var(--stroke);
+    font-size:11px;color:var(--dim2);line-height:1.65}
+  footer code{font-family:var(--mono);color:var(--dim);background:rgba(255,255,255,.05);
+    padding:1px 5px;border-radius:4px}
+  svg text{font-family:ui-monospace,Menlo,Consolas,monospace}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="brand">
+    <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#06121e" stroke-width="2.4"
+      stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h4v-4h4v-4h4V8h6"/></svg></div>
+    <div>
+      <h1>Assistenza Connessa &middot; Servoscala</h1>
+      <div class="tag" id="tag-periodo"></div>
+    </div>
+  </div>
+  <div class="fleetkpi" id="fleetkpi"></div>
+</header>
+
+<h2>Flotta in monitoraggio <span class="pill" id="pill-n"></span></h2>
+<div class="fleet" id="fleet"></div>
+
+<div id="detail"></div>
+
+<footer id="foot"></footer>
+</div>
+
+<script>
+/* ==========================================================================
+   PORTALE DI ASSISTENZA - 3 digital twin con 24 mesi di storico.
+   I dati sono generati da un PRNG con seme fisso: lo storico e' quindi
+   sempre lo stesso a ogni apertura, ma con la variabilita' di un impianto vero.
+   Le regole di stato ricalcano manager.py (R3 usura, R5 warning,
+   R6 alarm) portate alle soglie di un contratto di manutenzione reale.
+   ========================================================================== */
+const OGGI = new Date(2026, 6, 25);
+const NM = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
+const MESI = [];
+for (let k=23;k>=0;k--){ const d = new Date(2026, 6-k, 1);
+  MESI.push({ y:d.getFullYear(), m:d.getMonth(), et:NM[d.getMonth()]+' '+String(d.getFullYear()).slice(2) }); }
+
+/* stagionalita' di un condominio italiano: si viaggia meno a luglio e agosto */
+const STAG = [1.02,1.01,1.03,1.00,0.99,0.94,0.80,0.75,0.97,1.04,1.05,1.03];
+
+/* soglie di servizio del contratto (versione "di esercizio" di comune.py) */
+const SRV = { INTERVALLO_MESI:6, CORSE_TAGLIANDO:2500, USURA_TAGLIANDO:12500,
+              SLA_DISPONIBILITA:98.5, RITARDO_TOLLERATO:15 };
+
+function mulberry32(a){ return function(){ a|=0; a = a+0x6D2B79F5|0;
+  let t = Math.imul(a ^ a>>>15, 1|a); t = t + Math.imul(t ^ t>>>7, 61|t) ^ t;
+  return ((t ^ t>>>14)>>>0) / 4294967296; }; }
+function poisson(rnd, lam){ if (lam<=0) return 0;
+  let L=Math.exp(-lam), k=0, p=1; do { k++; p*=rnd(); } while(p>L); return k-1; }
+const iso = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const itd = d => String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
+const num = (v,d=0) => v.toLocaleString('it-IT',{minimumFractionDigits:d, maximumFractionDigits:d});
+
+/* -------------------------------------------------------------- PROFILI */
+const PROFILI = [
+{
+  id:'SV01', rampe:3, edificio:'Palazzina A', indirizzo:'Via Manzoni 14, Modena',
+  matricola:'SVC-3R-1148', colore:'#f2c200', livrea:'gialla',
+  file:'impianto_SV01_3rampe.html', installazione:'2019-04-12',
+  contratto:'Full service &middot; tagliando semestrale', utenza:'Condominio, 12 famiglie &middot; 2 utenti in carrozzina',
+  seed:1148, corseBase:452, minCorsa:2.7, trend:0.05,
+  lam:{ E01:0.05, E07:0.11, E12:0.55 }, riparaH:{ E01:0.6, E07:5.0, E12:0.15 },
+  tagliandi:[1,7,13,19], ritardi:[2,0,4,1], saltati:[],
+  degradoDa:null, degradoA:null, degradoMul:1, benessere:0.15,
+  fermiLunghi:[{k:5,h:14},{k:16,h:9}]
+},
+{
+  id:'SV02', rampe:2, edificio:'Palazzina B', indirizzo:'Via Cavour 3, Carpi',
+  matricola:'SVC-2R-0932', colore:'#ff6a1a', livrea:'arancio',
+  file:'impianto_SV02_2rampe.html', installazione:'2020-09-30',
+  contratto:'Full service &middot; tagliando semestrale', utenza:'Condominio, 8 famiglie &middot; 1 utente in carrozzina',
+  seed:932, corseBase:298, minCorsa:2.2, trend:0.03,
+  lam:{ E01:0.07, E07:0.16, E12:0.35 }, riparaH:{ E01:0.9, E07:6.5, E12:0.15 },
+  tagliandi:[1,7,13,19], ritardi:[3,1,null,52], saltati:[13],
+  degradoDa:14, degradoA:20, degradoMul:4.2, benessere:0.25,
+  fermiLunghi:[{k:15,h:29},{k:17,h:52},{k:19,h:34},{k:20,h:21}]
+},
+{
+  id:'SV03', rampe:1, edificio:'Villa Ginestre', indirizzo:'Via Radici 8, Sassuolo',
+  matricola:'SVC-1R-0517', colore:'#2ea8ff', livrea:'azzurra',
+  file:'impianto_SV03_1rampa.html', installazione:'2017-11-08',
+  contratto:'Manutenzione ordinaria &middot; tagliando annuale', utenza:'Abitazione privata &middot; 1 utente, 84 anni',
+  seed:517, corseBase:74, minCorsa:1.9, trend:-0.10,
+  lam:{ E01:0.20, E07:0.32, E12:0.06 }, riparaH:{ E01:1.5, E07:7.0, E12:0.15 },
+  tagliandi:[3,15], ritardi:[18, 26], saltati:[],
+  degradoDa:16, degradoA:null, degradoMul:4.4, benessere:1.5,
+  fermiLunghi:[{k:18,h:21},{k:19,h:18},{k:21,h:34},{k:22,h:46},{k:23,h:27}]
+}];
+
+/* ------------------------------------------------- GENERAZIONE STORICO */
+function genera(P){
+  const rnd = mulberry32(P.seed);
+  const manut = P.tagliandi.map((k,i)=>{
+    const prev = new Date(MESI[k].y, MESI[k].m, 12);
+    const saltata = P.saltati.includes(k);
+    const rit = saltata ? null : P.ritardi[i];
+    const eseg = saltata ? null : new Date(MESI[k].y, MESI[k].m, 12 + rit);
+    return { k, prev, eseg, saltata, ritardo:rit,
+      tipo: saltata ? 'Tagliando semestrale' :
+            (i % 2 === 0 ? 'Tagliando + verifica funi e coste' : 'Tagliando ordinario'),
+      tecnico: ['M. Bertelli','L. Fanti','S. Neri','A. Guidetti'][i % 4] };
+  });
+  const resetMese = new Set(manut.filter(t=>!t.saltata).map(t=>t.k));
+
+  const mesi = []; let usura = 900 + rnd()*700, corseTag = 120 + Math.floor(rnd()*180);
+  MESI.forEach((M,k)=>{
+    /* finestra di degrado: dal mese in cui salta la manutenzione fino all'intervento
+       riparatore. Fuori dalla finestra il comportamento torna quello di targa. */
+    const inDeg = P.degradoDa !== null && k >= P.degradoDa &&
+                  (P.degradoA === null || k <= P.degradoA);
+    const dopoDeg = P.degradoA !== null && k > P.degradoA;
+    const deg = inDeg ? 1 + (P.degradoMul-1)*Math.min(1,(k-P.degradoDa+1)/5)
+              : dopoDeg ? 1.35 : 1;
+    const corse = Math.max(8, Math.round(P.corseBase * STAG[M.m] *
+      (1 + P.trend*k/23) * (0.90 + 0.20*rnd()) / (deg > 1.6 ? 1.15 : 1)));
+    const ore = +(corse * P.minCorsa / 60).toFixed(1);
+    const g = { E01: poisson(rnd, P.lam.E01*deg), E07: poisson(rnd, P.lam.E07*deg),
+                E12: poisson(rnd, P.lam.E12) };
+    let fermo = g.E01*P.riparaH.E01 + g.E07*P.riparaH.E07 + g.E12*P.riparaH.E12;
+    (P.fermiLunghi||[]).forEach(f=>{ if (f.k === k) fermo += f.h; });
+    fermo = +fermo.toFixed(1);
+    const gg = new Date(M.y, M.m+1, 0).getDate();
+    const disp = +Math.max(90, 100 - fermo/(24*gg)*100).toFixed(2);
+    /* R3 di manager.py: l'usura e' la somma degli assorbimenti delle corse */
+    usura += corse * (4.4 + 0.9*rnd()) * (deg > 1 ? 1.12 : 1);
+    corseTag += corse;
+    if (resetMese.has(k)){ usura = 60 + rnd()*140; corseTag = 0; }
+    mesi.push({ ...M, corse, ore, g, guasti:g.E01+g.E07, fermo, disp,
+      usura:Math.round(usura), corseTag, benessere: poisson(rnd, P.benessere) });
+  });
+  return { ...P, mesi, manut };
+}
+
+/* ------------------------------------------------------ KPI DERIVATI */
+function kpi(I){
+  const m = I.mesi, m12 = m.slice(12);
+  const S = (a,f) => a.reduce((s,x)=>s+f(x), 0);
+  const ore   = S(m, x=>x.ore),      corse = S(m, x=>x.corse);
+  const guasti= S(m, x=>x.guasti),   fermo = S(m, x=>x.fermo);
+  const g12   = S(m12, x=>x.guasti), ore12 = S(m12, x=>x.ore);
+  const disp  = S(m, x=>x.disp)/m.length;
+  const eseg  = I.manut.filter(t=>!t.saltata), saltate = I.manut.length - eseg.length;
+  const punt  = eseg.filter(t=>t.ritardo <= SRV.RITARDO_TOLLERATO).length;
+  const ritMed= eseg.length ? S(eseg, t=>t.ritardo)/eseg.length : 0;
+  const ultimo= eseg.length ? eseg[eseg.length-1] : null;
+  const prossima = ultimo
+    ? new Date(ultimo.eseg.getFullYear(), ultimo.eseg.getMonth()+SRV.INTERVALLO_MESI, ultimo.eseg.getDate())
+    : null;
+  const gScad = prossima ? Math.round((prossima-OGGI)/864e5) : null;
+  const cur   = m[m.length-1];
+  const usuraPct = Math.round(cur.usura / SRV.USURA_TAGLIANDO * 100);
+  const corsePct = Math.round(cur.corseTag / SRV.CORSE_TAGLIANDO * 100);
+  const disp12 = S(m12, x=>x.disp)/m12.length;
+  /* MTBF espresso in giorni di calendario: su un impianto che lavora poche ore
+     al mese, le ore-motore fra un guasto e l'altro non dicono nulla di utile. */
+  const mtbf = g12 ? 365/g12 : 365;
+  const benessere = S(m12, x=>x.benessere);
+
+  /* stato secondo la logica di manager.py, con soglie di esercizio */
+  let stato = 'ok', motivo = "Nessuna anomalia rilevante negli ultimi 12 mesi.";
+  if (usuraPct > 78 || corsePct > 78 || (gScad !== null && gScad < 30)){
+    stato = 'warn'; motivo = "Intervallo di manutenzione in esaurimento: pianificare il tagliando."; }
+  if (saltate > 0){ stato = 'warn';
+    motivo = "Un tagliando non \u00e8 stato eseguito: verificare il degrado accumulato nel periodo scoperto."; }
+  if (usuraPct > 100 || corsePct > 100 || (gScad !== null && gScad < 0)){
+    stato = 'warn'; motivo = "Manutenzione scaduta: l'impianto lavora oltre l'intervallo contrattuale."; }
+  if (g12 >= 14 || mtbf < 30 || m12.slice(-3).filter(x=>x.disp < 97).length >= 2){
+    stato = 'alarm'; motivo = "Guasti ricorrenti e disponibilit\u00e0 sotto SLA: intervento urgente."; }
+
+  /* indice di salute: pesa i guasti recenti, la disponibilita', la regolarita'
+     delle manutenzioni, l'usura residua e il fermo macchina complessivo */
+  const salute = Math.max(3, Math.min(100, Math.round(100
+    - Math.min(30, g12 * 1.6)
+    - Math.min(25, Math.max(0, SRV.SLA_DISPONIBILITA - disp12) * 10)
+    - Math.min(20, saltate * 14)
+    - Math.min(12, Math.max(0, ritMed - SRV.RITARDO_TOLLERATO) * 0.4)
+    - Math.min(18, Math.max(0, usuraPct - 80) * 0.30)
+    - Math.min(15, (gScad === null ? 0 : Math.max(0, -gScad)) * 0.10)
+    - Math.min(10, fermo / 30))));
+
+  return { ore, corse, guasti, fermo, g12, ore12, disp, disp12, eseg:eseg.length, tot:I.manut.length,
+           saltate, punt, ritMed, prossima, gScad, usuraPct, corsePct, mtbf, salute,
+           stato, motivo, benessere, cur };
+}
+
+const FLOTTA = PROFILI.map(genera);
+FLOTTA.forEach(I => I.k = kpi(I));
+
+/* ==========================================================================
+   GRAFICI SVG (nessuna libreria: markup generato a mano)
+   ========================================================================== */
+const esc = t => String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+function assi(W,H,ml,mr,mt,mb,ymax,tick,unita){
+  const gh = H-mt-mb; let g='';
+  for (let i=0;i<=tick;i++){
+    const v = ymax*i/tick, y = mt+gh-gh*i/tick;
+    g += `<line x1="${ml}" y1="${y.toFixed(1)}" x2="${W-mr}" y2="${y.toFixed(1)}"
+           stroke="rgba(255,255,255,.06)" stroke-width="1"/>
+          <text x="${ml-7}" y="${(y+3.5).toFixed(1)}" fill="#5f6e85" font-size="9"
+           text-anchor="end">${v>=1000?Math.round(v/1000)+'k':(+v.toFixed(v<10?1:0))}</text>`;
+  }
+  if (unita) g += `<text x="${ml-7}" y="${mt-8}" fill="#5f6e85" font-size="8.5" text-anchor="end">${unita}</text>`;
+  return g;
+}
+function etichetteX(W,H,ml,mr,mb,n,ogni){
+  const bw=(W-ml-mr)/n; let g='';
+  for (let i=0;i<n;i++) if (i%ogni===0)
+    g += `<text x="${(ml+bw*(i+0.5)).toFixed(1)}" y="${H-mb+14}" fill="#5f6e85" font-size="8.5"
+           text-anchor="middle">${MESI[i].et}</text>`;
+  return g;
+}
+/* barre corse + linea ore motore */
+function graficoAttivita(I){
+  const W=980,H=210,ml=44,mr=44,mt=18,mb=26,gh=H-mt-mb,bw=(W-ml-mr)/24;
+  const maxC=Math.max(...I.mesi.map(x=>x.corse))*1.12, maxO=Math.max(...I.mesi.map(x=>x.ore))*1.25;
+  let g=assi(W,H,ml,mr,mt,mb,maxC,4,'corse');
+  I.mesi.forEach((x,i)=>{ const h=gh*x.corse/maxC;
+    g+=`<rect x="${(ml+bw*i+bw*0.20).toFixed(1)}" y="${(mt+gh-h).toFixed(1)}"
+         width="${(bw*0.60).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${I.colore}" opacity=".72"/>`; });
+  const pts=I.mesi.map((x,i)=>`${(ml+bw*(i+0.5)).toFixed(1)},${(mt+gh-gh*x.ore/maxO).toFixed(1)}`).join(' ');
+  g+=`<polyline points="${pts}" fill="none" stroke="#3ea6ff" stroke-width="2"
+        stroke-linejoin="round" stroke-linecap="round"/>`;
+  I.mesi.forEach((x,i)=>{ g+=`<circle cx="${(ml+bw*(i+0.5)).toFixed(1)}"
+        cy="${(mt+gh-gh*x.ore/maxO).toFixed(1)}" r="2.2" fill="#3ea6ff"/>`; });
+  for (let i=0;i<=4;i++){ const v=maxO*i/4, y=mt+gh-gh*i/4;
+    g+=`<text x="${W-mr+7}" y="${(y+3.5).toFixed(1)}" fill="#3d6a95" font-size="9">${v.toFixed(0)}</text>`; }
+  g+=`<text x="${W-mr+7}" y="${mt-8}" fill="#3d6a95" font-size="8.5">ore</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${g}${etichetteX(W,H,ml,mr,mb,24,3)}</svg>`;
+}
+/* barre impilate dei guasti per codice */
+const CODCOL={E01:'#ff4d5e',E07:'#ffb020',E12:'#7d8ba3'};
+function graficoGuasti(I){
+  const W=980,H=180,ml=44,mr=18,mt=18,mb=26,gh=H-mt-mb,bw=(W-ml-mr)/24;
+  const maxG=Math.max(3,...I.mesi.map(x=>x.g.E01+x.g.E07+x.g.E12))*1.15;
+  let g=assi(W,H,ml,mr,mt,mb,maxG,3,'eventi');
+  I.mesi.forEach((x,i)=>{ let acc=0;
+    ['E12','E07','E01'].forEach(c=>{ const v=x.g[c]; if(!v) return;
+      const h=gh*v/maxG, y=mt+gh-h-acc; acc+=h;
+      g+=`<rect x="${(ml+bw*i+bw*0.20).toFixed(1)}" y="${y.toFixed(1)}"
+           width="${(bw*0.60).toFixed(1)}" height="${h.toFixed(1)}" rx="1.5" fill="${CODCOL[c]}" opacity=".88"/>`; }); });
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${g}${etichetteX(W,H,ml,mr,mb,24,3)}</svg>`;
+}
+/* disponibilita' mensile con banda SLA */
+function graficoDisponibilita(I){
+  const W=980,H=180,ml=44,mr=18,mt=18,mb=26,gh=H-mt-mb,bw=(W-ml-mr)/24;
+  const lo=Math.min(94, Math.floor(Math.min(...I.mesi.map(x=>x.disp))-0.6)), hi=100;
+  const Y=v=>mt+gh-gh*(v-lo)/(hi-lo);
+  let g='';
+  for (let i=0;i<=4;i++){ const v=lo+(hi-lo)*i/4, y=Y(v);
+    g+=`<line x1="${ml}" y1="${y.toFixed(1)}" x2="${W-mr}" y2="${y.toFixed(1)}"
+         stroke="rgba(255,255,255,.06)"/><text x="${ml-7}" y="${(y+3.5).toFixed(1)}"
+         fill="#5f6e85" font-size="9" text-anchor="end">${v.toFixed(1)}%</text>`; }
+  g+=`<rect x="${ml}" y="${mt}" width="${W-ml-mr}" height="${(Y(SRV.SLA_DISPONIBILITA)-mt).toFixed(1)}"
+        fill="rgba(37,208,122,.06)"/>
+      <line x1="${ml}" y1="${Y(SRV.SLA_DISPONIBILITA).toFixed(1)}" x2="${W-mr}"
+        y2="${Y(SRV.SLA_DISPONIBILITA).toFixed(1)}" stroke="#25d07a" stroke-width="1.4" stroke-dasharray="5 4"/>
+      <text x="${W-mr}" y="${(Y(SRV.SLA_DISPONIBILITA)-6).toFixed(1)}" fill="#25d07a" font-size="9"
+        text-anchor="end">SLA ${SRV.SLA_DISPONIBILITA}%</text>`;
+  const pts=I.mesi.map((x,i)=>`${(ml+bw*(i+0.5)).toFixed(1)},${Y(x.disp).toFixed(1)}`).join(' ');
+  g+=`<polyline points="${pts}" fill="none" stroke="${I.colore}" stroke-width="2.2" stroke-linejoin="round"/>`;
+  I.mesi.forEach((x,i)=>{ const sotto=x.disp<SRV.SLA_DISPONIBILITA;
+    g+=`<circle cx="${(ml+bw*(i+0.5)).toFixed(1)}" cy="${Y(x.disp).toFixed(1)}" r="${sotto?3.4:2.2}"
+         fill="${sotto?'#ff4d5e':I.colore}"/>`; });
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${g}${etichetteX(W,H,ml,mr,mb,24,3)}</svg>`;
+}
+/* usura accumulata dal tagliando, con azzeramenti agli interventi */
+function graficoUsura(I){
+  const W=980,H=180,ml=52,mr=18,mt=18,mb=26,gh=H-mt-mb,bw=(W-ml-mr)/24;
+  const maxU=Math.max(SRV.USURA_TAGLIANDO*1.15, ...I.mesi.map(x=>x.usura*1.08));
+  const Y=v=>mt+gh-gh*Math.min(v,maxU)/maxU;
+  let g=assi(W,H,ml,mr,mt,mb,maxU,4,'usura');
+  g+=`<rect x="${ml}" y="${mt}" width="${W-ml-mr}" height="${(Y(SRV.USURA_TAGLIANDO)-mt).toFixed(1)}"
+        fill="rgba(255,77,94,.07)"/>
+      <line x1="${ml}" y1="${Y(SRV.USURA_TAGLIANDO).toFixed(1)}" x2="${W-mr}"
+        y2="${Y(SRV.USURA_TAGLIANDO).toFixed(1)}" stroke="#ff4d5e" stroke-width="1.4" stroke-dasharray="5 4"/>
+      <text x="${W-mr}" y="${(Y(SRV.USURA_TAGLIANDO)-6).toFixed(1)}" fill="#ff4d5e" font-size="9"
+        text-anchor="end">soglia tagliando</text>`;
+  const pts=I.mesi.map((x,i)=>`${(ml+bw*(i+0.5)).toFixed(1)},${Y(x.usura).toFixed(1)}`).join(' ');
+  g+=`<polyline points="${pts}" fill="none" stroke="${I.colore}" stroke-width="2.2" stroke-linejoin="round"/>`;
+  I.manut.forEach(t=>{ const x=ml+bw*(t.k+0.5);
+    g+=`<line x1="${x.toFixed(1)}" y1="${mt}" x2="${x.toFixed(1)}" y2="${mt+gh}"
+         stroke="${t.saltata?'#ff4d5e':'rgba(255,255,255,.22)'}" stroke-width="1"
+         stroke-dasharray="${t.saltata?'3 3':'2 4'}"/>`; });
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${g}${etichetteX(W,H,ml,mr,mb,24,3)}</svg>`;
+}
+/* calendario manutenzioni: previsto vs eseguito */
+function graficoManutenzioni(I){
+  const W=980,H=118,ml=18,mr=18,mt=34,mb=26,bw=(W-ml-mr)/24, yl=mt+22;
+  let g=`<line x1="${ml}" y1="${yl}" x2="${W-mr}" y2="${yl}" stroke="rgba(255,255,255,.13)" stroke-width="1.5"/>`;
+  for (let i=0;i<24;i++){ const x=ml+bw*(i+0.5);
+    g+=`<line x1="${x.toFixed(1)}" y1="${yl-4}" x2="${x.toFixed(1)}" y2="${yl+4}" stroke="rgba(255,255,255,.09)"/>`;
+    if (i%3===0) g+=`<text x="${x.toFixed(1)}" y="${yl+22}" fill="#5f6e85" font-size="8.5"
+      text-anchor="middle">${MESI[i].et}</text>`; }
+  I.manut.forEach(t=>{
+    const xp = ml+bw*(t.k+0.5);
+    if (t.saltata){
+      g+=`<circle cx="${xp.toFixed(1)}" cy="${yl}" r="7" fill="none" stroke="#ff4d5e" stroke-width="2"/>
+          <path d="M${(xp-3.4).toFixed(1)} ${yl-3.4} l6.8 6.8 M${(xp+3.4).toFixed(1)} ${yl-3.4} l-6.8 6.8"
+            stroke="#ff4d5e" stroke-width="2" stroke-linecap="round"/>
+          <text x="${xp.toFixed(1)}" y="${yl-14}" fill="#ff4d5e" font-size="9" text-anchor="middle"
+            font-weight="700">SALTATO</text>`;
+    } else {
+      const gg = new Date(t.eseg.getFullYear(), t.eseg.getMonth(), 0).getDate() || 30;
+      const xe = xp + bw * (t.ritardo/gg);
+      const col = t.ritardo <= SRV.RITARDO_TOLLERATO ? '#25d07a' : '#ffb020';
+      if (t.ritardo > 0)
+        g+=`<line x1="${xp.toFixed(1)}" y1="${yl}" x2="${xe.toFixed(1)}" y2="${yl}"
+             stroke="${col}" stroke-width="3" stroke-linecap="round" opacity=".55"/>`;
+      g+=`<circle cx="${xp.toFixed(1)}" cy="${yl}" r="5.5" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/>
+          <circle cx="${xe.toFixed(1)}" cy="${yl}" r="5.5" fill="${col}"/>
+          <text x="${xe.toFixed(1)}" y="${yl-13}" fill="${col}" font-size="9" text-anchor="middle"
+            font-weight="700">${t.ritardo === 0 ? 'in data' : '+'+t.ritardo+' gg'}</text>`;
+    }
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${g}</svg>`;
+}
+function anello(pct, col){
+  const r=24, c=2*Math.PI*r;
+  return `<svg viewBox="0 0 56 56" style="width:56px;height:56px">
+    <circle cx="28" cy="28" r="${r}" fill="none" stroke="rgba(255,255,255,.09)" stroke-width="5"/>
+    <circle cx="28" cy="28" r="${r}" fill="none" stroke="${col}" stroke-width="5" stroke-linecap="round"
+      stroke-dasharray="${(c*pct/100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 28 28)"/></svg>`;
+}
+function sparkGuasti(I){
+  const d=I.mesi.slice(12).map(x=>x.guasti), W=200,H=26, max=Math.max(2,...d), bw=W/d.length;
+  let g=''; d.forEach((v,i)=>{ const h=Math.max(1.5,(H-4)*v/max);
+    g+=`<rect x="${(bw*i+bw*0.22).toFixed(1)}" y="${(H-h).toFixed(1)}" width="${(bw*0.56).toFixed(1)}"
+         height="${h.toFixed(1)}" rx="1.4" fill="${v?'#ff4d5e':'rgba(255,255,255,.16)'}" opacity="${v?.85:1}"/>`; });
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:26px">${g}</svg>`;
+}
+
+/* ==========================================================================
+   RENDER
+   ========================================================================== */
+const COLST = { ok:'#25d07a', warn:'#ffb020', alarm:'#ff4d5e' };
+const ETST  = { ok:'operativo', warn:'manutenzione programmata', alarm:'manutenzione urgente' };
+const colSalute = v => v>=78 ? COLST.ok : v>=52 ? COLST.warn : COLST.alarm;
+const E = id => document.getElementById(id);
+
+/* ---------------- intestazione di flotta ---------------- */
+E('tag-periodo').innerHTML = 'Periodo osservato: ' + MESI[0].et + ' &ndash; ' + MESI[23].et +
+  ' &middot; 24 mesi &middot; dati aggiornati al ' + itd(OGGI);
+E('pill-n').textContent = FLOTTA.length + ' impianti';
+{
+  const dispF = FLOTTA.reduce((s,I)=>s+I.k.disp12,0)/FLOTTA.length;
+  const g12   = FLOTTA.reduce((s,I)=>s+I.k.g12,0);
+  const es    = FLOTTA.reduce((s,I)=>s+I.k.eseg,0), tot = FLOTTA.reduce((s,I)=>s+I.k.tot,0);
+  const all   = FLOTTA.filter(I=>I.k.stato!=='ok').length;
+  const ore   = FLOTTA.reduce((s,I)=>s+I.k.ore,0);
+  E('fleetkpi').innerHTML = [
+    ['<b>'+FLOTTA.length+'</b>', 'impianti', ''],
+    ['<b>'+num(ore)+'</b>', 'ore di lavoro', ''],
+    ['<b style="color:'+(dispF>=SRV.SLA_DISPONIBILITA?COLST.ok:COLST.warn)+'">'+dispF.toFixed(2)+'%</b>',
+      'disponibilit&agrave; 12 mesi', ''],
+    ['<b>'+g12+'</b>', 'guasti 12 mesi', ''],
+    ['<b>'+es+'/'+tot+'</b>', 'manutenzioni', ''],
+    ['<b style="color:'+(all?COLST.alarm:COLST.ok)+'">'+all+'</b>', 'impianti da seguire', '']
+  ].map(([b,s])=>'<div class="fk">'+b+'<span>'+s+'</span></div>').join('');
+}
+
+/* ---------------- schede ---------------- */
+function scheda(I){
+  const k = I.k;
+  return `<div class="card" data-id="${I.id}" style="--c:${I.colore}">
+    <div class="chead">
+      <div>
+        <div class="idb" style="color:${I.colore}">${I.id}</div>
+        <div class="edi">${I.edificio}<br>${I.rampe} ${I.rampe===1?'rampa':'rampe'} &middot;
+          ${I.rampe+1} piani &middot; livrea ${I.livrea}</div>
+        <span class="st ${k.stato}">${ETST[k.stato]}</span>
+      </div>
+      <div class="ring">${anello(k.salute, colSalute(k.salute))}<b style="color:${colSalute(k.salute)}">${k.salute}</b></div>
+    </div>
+    <div class="mini">
+      <div><b>${num(k.ore)}</b><span>ore lavoro</span></div>
+      <div><b>${num(k.corse)}</b><span>corse</span></div>
+      <div><b style="color:${k.g12>10?COLST.alarm:k.g12>4?COLST.warn:'inherit'}">${k.guasti}</b><span>guasti 24m</span></div>
+      <div><b style="color:${k.disp>=SRV.SLA_DISPONIBILITA?COLST.ok:COLST.warn}">${k.disp.toFixed(1)}%</b><span>disponib.</span></div>
+    </div>
+    <div class="cfoot">
+      <div class="spark" title="guasti negli ultimi 12 mesi">${sparkGuasti(I)}</div>
+      <a class="tw" href="${I.file}" onclick="event.stopPropagation()">Digital twin 3D &rarr;</a>
+    </div>
+  </div>`;
+}
+E('fleet').innerHTML = FLOTTA.map(scheda).join('');
+
+/* ---------------- raccomandazioni ---------------- */
+function raccomandazioni(I){
+  const k = I.k, r = [];
+  const salt = I.manut.find(t=>t.saltata);
+  if (salt) r.push(['alarm','!','Tagliando non eseguito &mdash; '+MESI[salt.k].et,
+    'L\'intervento previsto per il '+itd(salt.prev)+' non risulta eseguito. Da quel mese l\'usura ' +
+    'non &egrave; stata azzerata e gli eventi <code>E07</code> sono passati da ' +
+    (I.mesi.slice(salt.k-4,salt.k).reduce((s,x)=>s+x.g.E07,0)/4).toFixed(1) + ' a ' +
+    (I.mesi.slice(-4).reduce((s,x)=>s+x.g.E07,0)/4).toFixed(1) + ' al mese.']);
+  if (k.usuraPct > 78) r.push([k.usuraPct>100?'alarm':'warn','U',
+    'Usura stimata al '+k.usuraPct+'% della soglia',
+    'Somma degli assorbimenti dall\'ultimo tagliando: '+num(k.cur.usura)+' su '+num(SRV.USURA_TAGLIANDO)+
+    '. &Egrave; la regola R3 di <code>manager.py</code> portata alla soglia contrattuale.']);
+  if (k.corsePct > 78) r.push([k.corsePct>100?'alarm':'warn','C',
+    'Corse dall\'ultimo tagliando: '+num(k.cur.corseTag),
+    'Pari al '+k.corsePct+'% delle '+num(SRV.CORSE_TAGLIANDO)+' corse previste fra un intervento e l\'altro.']);
+  if (k.gScad !== null && k.gScad < 45) r.push([k.gScad<0?'alarm':'warn','D',
+    k.gScad<0 ? 'Tagliando scaduto da '+(-k.gScad)+' giorni' : 'Tagliando in scadenza fra '+k.gScad+' giorni',
+    'Scadenza contrattuale: '+itd(k.prossima)+'.']);
+  if (k.mtbf < 60) r.push([k.mtbf<30?'alarm':'warn','M','MTBF sceso a '+k.mtbf.toFixed(0)+' giorni',
+    'Negli ultimi 12 mesi si sono registrati '+k.g12+' guasti su '+k.ore12.toFixed(0)+
+    ' ore di funzionamento: un fermo ogni '+k.mtbf.toFixed(0)+' giorni. Sotto i due mesi conviene ' +
+    'programmare una revisione, non continuare a riparare.']);
+  if (k.disp12 < SRV.SLA_DISPONIBILITA) r.push(['warn','%',
+    'Disponibilit&agrave; a 12 mesi sotto SLA: '+k.disp12.toFixed(2)+'%',
+    'Contro un impegno contrattuale del '+SRV.SLA_DISPONIBILITA+'%. Fermo macchina complessivo negli ' +
+    'ultimi 12 mesi: '+I.mesi.slice(12).reduce((s,x)=>s+x.fermo,0).toFixed(0)+' ore.']);
+  if (I.degradoA !== null && I.degradoA !== undefined){
+    const rip = I.manut.filter(t=>!t.saltata).slice(-1)[0];
+    if (rip) r.push(['warn','R','Situazione in rientro dopo l\'intervento del '+itd(rip.eseg),
+      'Nei mesi scoperti dalla manutenzione gli eventi erano saliti a ' +
+      (I.mesi.slice(I.degradoDa, I.degradoA+1).reduce((s,x)=>s+x.guasti,0) /
+       (I.degradoA-I.degradoDa+1)).toFixed(1) + ' al mese; dopo l\'intervento sono scesi a ' +
+      (I.mesi.slice(I.degradoA+1).reduce((s,x)=>s+x.guasti,0) /
+       Math.max(1, 23-I.degradoA)).toFixed(1) + '. Il recupero c\'&egrave;, ma restano sopra la media di flotta.']);
+  }
+  const sotto = I.mesi.slice(-3).filter(x=>x.disp < SRV.SLA_DISPONIBILITA);
+  if (sotto.length) r.push(['alarm','S','Disponibilit&agrave; sotto SLA in '+sotto.length+
+    ' degli ultimi 3 mesi', 'Minimo registrato: '+Math.min(...sotto.map(x=>x.disp)).toFixed(2)+
+    '% (SLA '+SRV.SLA_DISPONIBILITA+'%). Fermo macchina complessivo negli ultimi 3 mesi: '+
+    I.mesi.slice(-3).reduce((s,x)=>s+x.fermo,0).toFixed(1)+' ore.']);
+  if (k.benessere >= 8) r.push(['warn','B','Regola benessere: '+k.benessere+
+    ' segnalazioni di inattivit&agrave; prolungata',
+    'Su un impianto domestico con un solo utente l\'assenza di corse &egrave; un segnale da verificare, ' +
+    'non un guasto. &Egrave; la notifica <code>benessere</code> generata da <code>manager.py</code> (R2).']);
+  if (!r.length) r.push(['ok','&#10003;','Nessuna azione richiesta',
+    'Manutenzioni regolari, usura al '+k.usuraPct+'% della soglia, disponibilit&agrave; media '+
+    k.disp.toFixed(2)+'%. Prossimo tagliando il '+itd(k.prossima)+'.']);
+  return r;
+}
+
+/* ---------------- dettaglio ---------------- */
+function dettaglio(I){
+  const k = I.k;
+  const eta = ((OGGI - new Date(I.installazione))/(365.25*864e5)).toFixed(1);
+  const codici = [
+    ['E01','Pulsante di emergenza premuto', I.mesi.reduce((s,x)=>s+x.g.E01,0), I.mesi.slice(12).reduce((s,x)=>s+x.g.E01,0), I.riparaH.E01],
+    ['E07','Anomalia generica / costa impegnata', I.mesi.reduce((s,x)=>s+x.g.E07,0), I.mesi.slice(12).reduce((s,x)=>s+x.g.E07,0), I.riparaH.E07],
+    ['E12','Sovraccarico oltre 120 kg', I.mesi.reduce((s,x)=>s+x.g.E12,0), I.mesi.slice(12).reduce((s,x)=>s+x.g.E12,0), I.riparaH.E12]
+  ];
+  const KP = (v,u,lab,sub,col)=>`<div class="kpi"><b${col?' style="color:'+col+'"':''}>${v}${u?'<i>'+u+'</i>':''}</b>
+      <span>${lab}</span>${sub?'<em>'+sub+'</em>':''}</div>`;
+
+  return `
+  <h2>${I.id} &middot; ${I.edificio} <span class="pill" style="color:${I.colore}">livrea ${I.livrea}</span></h2>
+
+  <div class="grid3" style="margin-bottom:14px">
+    <div class="panel">
+      <p class="ct">Anagrafica impianto</p>
+      <table style="font-size:11.5px"><tbody>
+        <tr><td style="color:var(--dim);padding-left:0">Modello</td><td class="m">Piattaforma a fune &middot; ${I.rampe} ${I.rampe===1?'rampa':'rampe'}</td></tr>
+        <tr><td style="color:var(--dim);padding-left:0">Matricola</td><td class="m">${I.matricola}</td></tr>
+        <tr><td style="color:var(--dim);padding-left:0">Ubicazione</td><td>${I.indirizzo}</td></tr>
+        <tr><td style="color:var(--dim);padding-left:0">In esercizio dal</td><td class="m">${itd(new Date(I.installazione))} &middot; ${eta} anni</td></tr>
+        <tr><td style="color:var(--dim);padding-left:0">Contratto</td><td>${I.contratto}</td></tr>
+        <tr><td style="color:var(--dim);padding-left:0">Utenza</td><td>${I.utenza}</td></tr>
+        <tr><td style="color:var(--dim);padding-left:0">Device MQTT</td><td class="m">${I.id} &middot; ${I.rampe+1} stazioni di chiamata</td></tr>
+      </tbody></table>
+      <div style="margin-top:12px"><a class="tw" href="${I.file}">Apri il digital twin 3D &rarr;</a></div>
+    </div>
+    <div class="panel" style="grid-column:span 2">
+      <p class="ct">Stato di salute</p>
+      <p class="cs">${k.motivo}</p>
+      <div class="kpis">
+        ${KP(num(k.ore),'h','ore di lavoro','24 mesi &middot; '+num(k.ore12)+' h negli ultimi 12')}
+        ${KP(num(k.corse),'','corse effettuate','media '+num(k.corse/24)+'/mese')}
+        ${KP(k.guasti,'','guasti','ultimi 12 mesi: '+k.g12, k.g12>10?COLST.alarm:k.g12>4?COLST.warn:'')}
+        ${KP(k.mtbf.toFixed(0),'gg','MTBF','giorni fra due guasti', k.mtbf<45?COLST.alarm:k.mtbf<90?COLST.warn:'')}
+        ${KP(k.fermo.toFixed(0),'h','fermo macchina','24 mesi')}
+        ${KP(k.disp12.toFixed(2),'%','disponibilit&agrave; 12 mesi','SLA '+SRV.SLA_DISPONIBILITA+
+             '% &middot; 24 mesi: '+k.disp.toFixed(2)+'%',
+             k.disp12>=SRV.SLA_DISPONIBILITA?COLST.ok:COLST.warn)}
+        ${KP(k.eseg+'/'+k.tot,'','manutenzioni eseguite', k.saltate? k.saltate+' non eseguita':'nessuna saltata',
+             k.saltate?COLST.alarm:COLST.ok)}
+        ${KP(Math.round(k.punt/Math.max(1,k.eseg)*100),'%','puntualit&agrave;','ritardo medio '+k.ritMed.toFixed(0)+' gg',
+             k.punt===k.eseg?COLST.ok:COLST.warn)}
+        ${KP(k.usuraPct,'%','usura vs soglia',num(k.cur.usura)+' / '+num(SRV.USURA_TAGLIANDO),
+             k.usuraPct>100?COLST.alarm:k.usuraPct>78?COLST.warn:'')}
+        ${KP(k.gScad===null?'&mdash;':(k.gScad<0?'-'+(-k.gScad):k.gScad),'gg','prossimo tagliando',
+             k.prossima?itd(k.prossima):'da pianificare', k.gScad<0?COLST.alarm:k.gScad<45?COLST.warn:'')}
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:14px">
+    <p class="ct">Attivit&agrave; mensile</p>
+    <p class="cs">Corse effettuate (barre) e ore di lavoro del motore (linea). Il calo di luglio e agosto
+       &egrave; la stagionalit&agrave; tipica di un condominio.</p>
+    ${graficoAttivita(I)}
+    <div class="lg"><span><i style="background:${I.colore};opacity:.72"></i>corse</span>
+      <span><i style="background:#3ea6ff"></i>ore motore</span></div>
+  </div>
+
+  <div class="grid2" style="margin-bottom:14px">
+    <div class="panel">
+      <p class="ct">Eventi diagnostici per codice</p>
+      <p class="cs">Sono i messaggi pubblicati su <code>servoscala/${I.id}/evento</code>.
+         <code>E12</code> non &egrave; un guasto: &egrave; un tentativo di corsa oltre i 120 kg.</p>
+      ${graficoGuasti(I)}
+      <div class="lg"><span><i style="background:#ff4d5e"></i>E01 emergenza</span>
+        <span><i style="background:#ffb020"></i>E07 anomalia</span>
+        <span><i style="background:#7d8ba3"></i>E12 sovraccarico</span></div>
+      <table style="margin-top:12px"><thead><tr><th>Codice</th><th>Descrizione</th>
+        <th style="text-align:right">24m</th><th style="text-align:right">12m</th>
+        <th style="text-align:right">Fermo medio</th></tr></thead><tbody>
+        ${codici.map(([c,d,t24,t12,h])=>`<tr><td class="m" style="color:${CODCOL[c]};font-weight:700">${c}</td>
+          <td>${d}</td><td class="m" style="text-align:right">${t24}</td>
+          <td class="m" style="text-align:right">${t12}</td>
+          <td class="m" style="text-align:right">${h.toFixed(1)} h</td></tr>`).join('')}
+      </tbody></table>
+    </div>
+    <div class="panel">
+      <p class="ct">Disponibilit&agrave; mensile</p>
+      <p class="cs">Percentuale di tempo in cui l'impianto &egrave; risultato utilizzabile.
+         I punti rossi sono i mesi sotto SLA contrattuale.</p>
+      ${graficoDisponibilita(I)}
+      <p class="ct" style="margin-top:20px">Usura stimata dall'ultimo tagliando</p>
+      <p class="cs">Somma degli assorbimenti di ogni corsa (regola R3 di <code>manager.py</code>).
+         Le linee verticali sono i tagliandi: a ogni intervento il conteggio riparte da zero.</p>
+      ${graficoUsura(I)}
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:14px">
+    <p class="ct">Manutenzioni: previste e realmente eseguite</p>
+    <p class="cs">Cerchio vuoto = data prevista dal contratto &middot; cerchio pieno = intervento eseguito &middot;
+       il segmento misura il ritardo. Tolleranza contrattuale ${SRV.RITARDO_TOLLERATO} giorni.</p>
+    ${graficoManutenzioni(I)}
+    <table style="margin-top:8px"><thead><tr><th>Prevista</th><th>Eseguita</th><th>Ritardo</th>
+      <th>Intervento</th><th>Tecnico</th><th>Esito</th></tr></thead><tbody>
+      ${I.manut.map(t=>`<tr>
+        <td class="m">${itd(t.prev)}</td>
+        <td class="m">${t.saltata ? '&mdash;' : itd(t.eseg)}</td>
+        <td class="m">${t.saltata ? '&mdash;' : (t.ritardo===0?'in data':'+'+t.ritardo+' gg')}</td>
+        <td>${t.tipo}</td><td>${t.saltata ? '&mdash;' : t.tecnico}</td>
+        <td>${t.saltata ? '<span class="chip miss">NON ESEGUITO</span>'
+             : t.ritardo <= SRV.RITARDO_TOLLERATO ? '<span class="chip ok">REGOLARE</span>'
+             : '<span class="chip late">FUORI TOLLERANZA</span>'}</td></tr>`).join('')}
+    </tbody></table>
+  </div>
+
+  <div class="panel">
+    <p class="ct">Cosa dice il monitoraggio</p>
+    <p class="cs">Sintesi generata dalle stesse regole del manager, applicate alle soglie del contratto.</p>
+    ${raccomandazioni(I).map(([lv,ic,tit,txt])=>`<div class="rec">
+      <div class="ic" style="background:${lv==='ok'?'rgba(37,208,122,.16)':lv==='warn'?'rgba(255,176,32,.16)':'rgba(255,77,94,.18)'};
+        color:${COLST[lv]}">${ic}</div>
+      <div><b>${tit}</b><p>${txt}</p></div></div>`).join('')}
+  </div>`;
+}
+
+let sel = FLOTTA[1].id;   // si apre sull'impianto con l'anomalia piu' istruttiva
+function seleziona(id){
+  sel = id;
+  document.querySelectorAll('.card').forEach(c=>c.classList.toggle('sel', c.dataset.id===id));
+  E('detail').innerHTML = dettaglio(FLOTTA.find(I=>I.id===id));
+}
+document.querySelectorAll('.card').forEach(c=>c.onclick = ()=>seleziona(c.dataset.id));
+seleziona(sel);
+
+E('foot').innerHTML = `
+  <b style="color:var(--dim)">Da dove arrivano questi dati.</b>
+  Ogni impianto &egrave; un device MQTT del progetto: pubblica <code>servoscala/&lt;id&gt;/telemetria</code>,
+  <code>servoscala/&lt;id&gt;/corsa</code> e <code>servoscala/&lt;id&gt;/evento</code>.
+  Il portale non fa altro che storicizzare quei messaggi e applicare le regole del
+  <code>manager</code>: R3 per l'usura (somma degli assorbimenti), R5 e R6 per le soglie di
+  manutenzione, R2 per le segnalazioni di inattivit&agrave; prolungata.<br>
+  Le soglie di <code>comune.py</code> sono volutamente compresse per rendere la demo
+  osservabile in pochi minuti (8 corse, usura 45). Qui sono riportate ai valori di un contratto
+  reale: tagliando ogni ${SRV.INTERVALLO_MESI} mesi o ${num(SRV.CORSE_TAGLIANDO)} corse,
+  soglia di usura ${num(SRV.USURA_TAGLIANDO)}, SLA di disponibilit&agrave; ${SRV.SLA_DISPONIBILITA}%.<br>
+  Lo storico &egrave; generato con un seme fisso: gli stessi numeri a ogni apertura.`;
+</script>
+</body>
+</html>

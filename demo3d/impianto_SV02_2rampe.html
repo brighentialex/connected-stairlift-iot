@@ -1,0 +1,2076 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Servoscala Connesso &mdash; Demo 3D interattiva</title>
+<style>
+  :root{
+    --bg:#0b0f16; --bg2:#0f1520; --panel:rgba(18,25,37,.82); --stroke:rgba(255,255,255,.09);
+    --txt:#e8eef7; --dim:#8b9bb4; --acc:#3ea6ff; --ok:#25d07a; --warn:#ffb020; --alarm:#ff4d5e;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--txt);
+    font-family:Inter,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+  #app{position:fixed;inset:0}
+  canvas{display:block}
+  #loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    background:var(--bg);z-index:99;flex-direction:column;gap:14px}
+  #loading .ring{width:38px;height:38px;border:3px solid rgba(62,166,255,.2);border-top-color:var(--acc);
+    border-radius:50%;animation:spin 900ms linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #loading small{color:var(--dim);font-size:12px;letter-spacing:.04em}
+
+  /* ---------- pannelli ---------- */
+  .panel{position:absolute;background:var(--panel);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+    border:1px solid var(--stroke);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.55)}
+  #hud{top:14px;left:14px;width:340px;max-height:calc(100vh - 28px);overflow-y:auto;padding:15px 16px}
+  #ctrl{top:14px;right:14px;width:272px;max-height:calc(100vh - 190px);overflow-y:auto;padding:14px}
+  #log{right:14px;bottom:14px;width:272px;height:158px;padding:10px 12px;display:flex;flex-direction:column}
+  .panel::-webkit-scrollbar{width:7px}
+  .panel::-webkit-scrollbar-thumb{background:rgba(255,255,255,.13);border-radius:4px}
+
+  h1{font-size:15px;margin:0 0 3px;letter-spacing:-.015em;font-weight:680;
+    display:flex;align-items:center;gap:8px}
+  #h-liv{width:11px;height:11px;border-radius:3px;flex:none;box-shadow:0 0 10px currentColor}
+  .sub{font-size:11px;color:var(--dim);margin-bottom:4px;line-height:1.5}
+  h2{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:#a6b6cd;
+    margin:16px 0 8px;font-weight:650;display:flex;align-items:center;gap:7px}
+  h2::after{content:"";flex:1;height:1px;background:var(--stroke)}
+  h2:first-of-type{margin-top:4px}
+
+  .row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;
+    font-size:12.5px;padding:4px 0}
+  .row .k{color:var(--dim);white-space:nowrap}
+  .row .v{font-family:var(--mono);font-weight:650;font-size:12.5px;text-align:right;color:#f4f8fd}
+
+  /* riquadri sintetici in cima alla telemetria */
+  .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:11px 0 2px}
+  .kpi{background:rgba(255,255,255,.05);border:1px solid var(--stroke);border-radius:11px;
+    padding:9px 5px 7px;text-align:center}
+  .kpi b{display:block;font-family:var(--mono);font-size:21px;font-weight:700;
+    letter-spacing:-.03em;line-height:1.05;color:#fff}
+  .kpi i{font-style:normal;font-size:11px;color:var(--dim);margin-left:1px;font-weight:600}
+  .kpi span{display:block;font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--dim);margin-top:5px;font-weight:600}
+
+  .bar{height:7px;border-radius:4px;background:rgba(255,255,255,.09);overflow:hidden;margin:5px 0 9px;position:relative}
+  .bar u{position:absolute;top:-2px;bottom:-2px;width:2px;background:rgba(255,255,255,.55);border-radius:1px}
+  .bar i{display:block;height:100%;border-radius:3px;transition:width .25s ease,background .3s}
+
+  .badge{display:inline-block;padding:3.5px 10px;border-radius:999px;font-size:11px;font-weight:750;
+    letter-spacing:.06em;text-transform:uppercase;font-family:var(--mono)}
+  .b-idle{background:rgba(139,155,180,.18);color:#b7c5da}
+  .b-up{background:rgba(37,208,122,.18);color:var(--ok)}
+  .b-down{background:rgba(62,166,255,.18);color:var(--acc)}
+  .b-off{background:rgba(255,77,94,.2);color:var(--alarm)}
+  .b-warn{background:rgba(255,176,32,.18);color:var(--warn)}
+
+  .dots{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin-top:5px}
+  .dot{display:flex;align-items:center;gap:7px;font-size:11.5px;color:#b3c1d6}
+  .dot i{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:none;
+    box-shadow:0 0 9px currentColor;color:var(--ok);transition:.2s}
+  .dot.bad i{background:var(--alarm);color:var(--alarm)}
+  .dot.wait i{background:var(--warn);color:var(--warn)}
+
+  /* ---------- comandi ---------- */
+  .floors{display:flex;flex-direction:column-reverse;gap:5px}
+  button{font:inherit;color:var(--txt);cursor:pointer;border-radius:9px;
+    border:1px solid var(--stroke);background:rgba(255,255,255,.045);transition:.15s}
+  button:hover:not(:disabled){background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2)}
+  button:disabled{opacity:.35;cursor:not-allowed}
+  .fl{display:flex;align-items:center;gap:9px;padding:7px 10px;font-size:11.5px;text-align:left;width:100%}
+  .fl .led{width:8px;height:8px;border-radius:50%;background:#2c3646;flex:none;transition:.2s}
+  .fl .led.libero{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .fl .led.arrivo{background:var(--warn);box-shadow:0 0 9px var(--warn);animation:bl .7s infinite}
+  .fl .led.occupato{background:var(--alarm);box-shadow:0 0 8px var(--alarm)}
+  @keyframes bl{50%{opacity:.25}}
+  .fl .nm{flex:1}
+  .fl .q{font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .fl.here{border-color:rgba(62,166,255,.55);background:rgba(62,166,255,.12)}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+  .btn{padding:7px 6px;font-size:11px;text-align:center}
+  .btn.on{background:rgba(62,166,255,.2);border-color:rgba(62,166,255,.55);color:#bfe0ff}
+  .btn.stop{background:rgba(255,176,32,.14);border-color:rgba(255,176,32,.4);color:#ffd28a}
+  .btn.emg{background:rgba(255,77,94,.16);border-color:rgba(255,77,94,.45);color:#ffb3ba;font-weight:700}
+  .btn.emg.on{background:var(--alarm);color:#fff;border-color:var(--alarm)}
+  .btn.go{background:rgba(37,208,122,.14);border-color:rgba(37,208,122,.4);color:#8ff0c0}
+  .btn.wide{grid-column:1/-1}
+
+  label.sl{display:block;font-size:10.5px;color:var(--dim);margin:8px 0 3px}
+  label.sl b{color:var(--txt);font-family:var(--mono);float:right;font-size:11px}
+  input[type=range]{width:100%;accent-color:var(--acc);height:16px}
+
+  /* ---------- log ---------- */
+  #log h2{margin:0 0 6px}
+  #logbody{flex:1;overflow-y:auto;font-family:var(--mono);font-size:9.5px;line-height:1.55}
+  #logbody::-webkit-scrollbar{width:6px}
+  #logbody::-webkit-scrollbar-thumb{background:rgba(255,255,255,.13);border-radius:3px}
+  .le{display:flex;gap:6px;padding:1px 0;border-bottom:1px solid rgba(255,255,255,.035)}
+  .le .t{color:#5d6b82;flex:none}
+  .le .tp{flex:1;word-break:break-all}
+  .le.tel .tp{color:#7fa8cc} .le.cor .tp{color:var(--ok)}
+  .le.evt .tp{color:var(--alarm)} .le.cmd .tp{color:#c79bff}
+  .le.not .tp{color:var(--warn)} .le.puls .tp{color:#ffd9a0}
+
+  /* ---------- toast ---------- */
+  #toasts{position:absolute;top:14px;left:50%;transform:translateX(-50%);
+    display:flex;flex-direction:column;gap:7px;align-items:center;pointer-events:none;z-index:20}
+  .toast{background:rgba(18,25,37,.94);backdrop-filter:blur(14px);border:1px solid var(--stroke);
+    border-left:3px solid var(--warn);border-radius:10px;padding:8px 14px;font-size:11.5px;
+    box-shadow:0 12px 34px rgba(0,0,0,.6);animation:tin .3s ease;max-width:460px}
+  .toast.alarm{border-left-color:var(--alarm)} .toast.ok{border-left-color:var(--ok)}
+  .toast b{display:block;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--dim);margin-bottom:2px;font-weight:600}
+  @keyframes tin{from{opacity:0;transform:translateY(-10px)}}
+
+  /* ---------- barra inferiore ---------- */
+  #bottom{position:absolute;bottom:14px;left:14px;display:flex;gap:8px;align-items:center;
+    background:var(--panel);backdrop-filter:blur(16px);border:1px solid var(--stroke);
+    border-radius:12px;padding:8px 10px;box-shadow:0 14px 40px rgba(0,0,0,.5)}
+  #bottom .lb{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);
+    margin-right:2px;font-weight:600}
+  #bottom button{padding:6px 10px;font-size:10.5px}
+  .sep{width:1px;height:22px;background:var(--stroke);margin:0 3px}
+  #scene-hint{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
+    font-size:10px;color:#4f5d73;pointer-events:none;letter-spacing:.04em}
+  @media(max-width:1250px){#hud{width:300px} #ctrl{width:250px} #log{display:none}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="loading"><div class="ring"></div><small>CARICAMENTO MODELLI 3D&hellip;</small></div>
+
+<!-- ======================= HUD TELEMETRIA ======================= -->
+<div class="panel" id="hud">
+  <h1><span id="h-liv"></span><span id="h-id">SV01</span> &middot; Servoscala connesso</h1>
+  <div class="sub" id="h-sub"></div>
+
+  <div class="kpis">
+    <div class="kpi"><b id="k-piano">P0</b><span id="k-piano-l">piano</span></div>
+    <div class="kpi"><b id="k-batt">96<i>%</i></b><span>batteria</span></div>
+    <div class="kpi"><b id="k-amp">0.0<i>A</i></b><span>motore</span></div>
+  </div>
+
+  <h2>Stato</h2>
+  <div class="row"><span class="k">stato</span><span class="v"><span class="badge b-idle" id="t-stato">idle</span></span></div>
+  <div class="row"><span class="k">indicatore_stato</span><span class="v" id="t-ind">operativo</span></div>
+
+  <h2>Posizione e rampa</h2>
+  <div class="row"><span class="k">piano_corrente</span><span class="v" id="t-piano">0</span></div>
+  <div class="row"><span class="k">rampa</span><span class="v" id="t-rampa">&mdash;</span></div>
+  <div class="row"><span class="k">quota</span><span class="v" id="t-quota">0.00 m</span></div>
+  <div class="row"><span class="k">pendenza tratto</span><span class="v" id="t-pend">0.0&deg;</span></div>
+  <div class="bar"><i id="t-progbar" style="width:0%;background:var(--acc)"></i></div>
+  <div class="row"><span class="k">percorso guida</span><span class="v" id="t-prog">0.0 / 0.0 m</span></div>
+  <div class="row"><span class="k">velocit&agrave;</span><span class="v" id="t-vel">0.00 m/s</span></div>
+
+  <h2>Carico a bordo</h2>
+  <div class="row"><span class="k">peso_kg</span><span class="v" id="t-peso">78.0 kg</span></div>
+  <div class="bar"><i id="t-pesobar" style="width:0%;background:var(--ok)"></i><u id="t-pesolim"></u></div>
+  <div class="row"><span class="k">limite corsa &middot; portata impianto</span><span class="v">120 &middot; 250 kg</span></div>
+
+  <h2>Batteria 24&nbsp;V DC &amp; motore</h2>
+  <div class="row"><span class="k">livello_batteria</span><span class="v" id="t-batt">100.0 %</span></div>
+  <div class="bar"><i id="t-battbar" style="width:100%;background:var(--ok)"></i></div>
+  <div class="row"><span class="k">tensione pacco</span><span class="v" id="t-volt">25.2 V</span></div>
+  <div class="row"><span class="k">modalita_ricarica</span><span class="v" id="t-ric">lenta</span></div>
+  <div class="row"><span class="k">assorbimento_motore</span><span class="v" id="t-amp">0.00 A</span></div>
+  <div class="bar"><i id="t-ampbar" style="width:0%;background:var(--acc)"></i></div>
+  <div class="row"><span class="k">potenza istantanea</span><span class="v" id="t-kw">0.00 kW</span></div>
+
+  <h2>Sicurezze e allarmi</h2>
+  <div class="dots">
+    <div class="dot" id="s-coste"><i></i>coste pedana</div>
+    <div class="dot" id="s-band"><i></i>bandelle</div>
+    <div class="dot" id="s-fc"><i></i>fine corsa</div>
+    <div class="dot" id="s-carico"><i></i>carico</div>
+    <div class="dot" id="s-emg"><i></i>emergenza</div>
+    <div class="dot" id="s-fune"><i></i>tiro fune</div>
+  </div>
+  <div class="row" style="margin-top:6px"><span class="k">n_anomalie</span><span class="v" id="t-anom">0</span></div>
+  <div class="row"><span class="k">ultimo codice</span><span class="v" id="t-err">&mdash;</span></div>
+
+  <h2>Manutenzione predittiva</h2>
+  <div class="row"><span class="k">contatore_corse</span><span class="v" id="t-corse">0</span></div>
+  <div class="row"><span class="k">usura stimata</span><span class="v" id="t-usura">0.0 / 45.0</span></div>
+  <div class="bar"><i id="t-usurabar" style="width:0%;background:var(--ok)"></i></div>
+  <div class="row"><span class="k">ore motore</span><span class="v" id="t-ore">0.00 h</span></div>
+  <div class="row"><span class="k">livello (manager)</span><span class="v"><span class="badge b-idle" id="t-manut">nessuno</span></span></div>
+</div>
+
+<!-- ======================= COMANDI ======================= -->
+<div class="panel" id="ctrl">
+  <h2 style="margin-top:0">Stazioni di chiamata</h2>
+  <div class="floors" id="floorbtns"></div>
+
+  <h2>Manovra a uomo presente</h2>
+  <div class="grid2">
+    <button class="btn go" id="b-up">&#9650;&nbsp; SU</button>
+    <button class="btn go" id="b-dn">&#9660;&nbsp; GI&Ugrave;</button>
+    <button class="btn stop wide" id="b-stop">&#9632;&nbsp; STOP</button>
+    <button class="btn emg wide" id="b-emg">EMERGENZA</button>
+  </div>
+
+  <h2>Passeggero e pedana</h2>
+  <label class="sl">peso a bordo <b id="v-peso">78 kg</b>
+    <input type="range" id="s-peso" min="0" max="250" value="78" step="1"></label>
+  <div class="grid2" style="margin-top:6px">
+    <button class="btn on" id="b-bordo">a bordo</button>
+    <button class="btn" id="b-fold">chiudi pedana</button>
+  </div>
+
+  <h2>Velocit&agrave; simulazione</h2>
+  <div class="grid4" id="speedbtns"></div>
+
+  <h2>Inquadratura</h2>
+  <div class="grid2" id="cambtns"></div>
+</div>
+
+<!-- ======================= LOG MQTT ======================= -->
+<div class="panel" id="log">
+  <h2>Traffico MQTT &middot; broker :1883</h2>
+  <div id="logbody"></div>
+</div>
+
+<div id="toasts"></div>
+
+<div id="bottom">
+  <span class="lb">Flotta</span>
+  <span id="fleetbtns" style="display:flex;gap:5px"></span>
+  <button class="btn" id="b-tele" title="Telemetria a schermo intero (tasto T)">Telemetria</button>
+  <button class="btn" id="b-dash" title="Portale di assistenza">Assistenza</button>
+  <div class="sep"></div>
+  <span class="lb">Demo</span>
+  <button class="btn go" id="b-auto">&#9654;&nbsp; Auto-demo</button>
+  <button class="btn" id="b-tour">Giro camera</button>
+  <div class="sep"></div>
+  <span class="lb">Vista</span>
+  <button class="btn" id="b-walls">Muri</button>
+  <button class="btn on" id="b-rail">Guida</button>
+  <button class="btn" id="b-reset">Reset</button>
+</div>
+<div id="scene-hint">trascina = ruota &nbsp;&middot;&nbsp; rotella = zoom &nbsp;&middot;&nbsp; tasto destro = sposta
+  &nbsp;&middot;&nbsp; <b>T</b> = telemetria a schermo intero</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ==========================================================================
+   SERVOSCALA CONNESSO - DEMO 3D
+   Vano scala di condominio a 3 rampe + servoscala a piattaforma con guida
+   curvilinea a trazione a fune.
+   La telemetria replica esattamente lo schema MQTT del progetto:
+     comune.py  -  servoscala.py  -  manager.py
+   ========================================================================== */
+if (typeof THREE === 'undefined') {
+  document.getElementById('loading').innerHTML =
+    '<div style="max-width:420px;text-align:center;line-height:1.6;font-size:13px">' +
+    '<b>Impossibile caricare Three.js dal CDN.</b><br>' +
+    'Serve una connessione a internet al primo avvio.</div>';
+  throw new Error('three.js non disponibile');
+}
+
+/* ---------------------------------------------------------------- COSTANTI */
+const ALZATA = 0.175, PEDATA = 0.29, NGRAD = 16;      // gradini a norma
+const RUN  = NGRAD * PEDATA;                          // 4.64 m di sviluppo
+const RISE = NGRAD * ALZATA;                          // 2.80 m di dislivello
+const LAND = 1.48;                                    // profondita' pianerottolo
+const LANE = 1.30;                                    // larghezza rampa
+const XA = -1.20, XB = 1.20;                          // asse guida corsia A / B
+const RCURVA = (XB - XA) / 2;                         // raggio delle curve a 180 (1.20 m)
+const XMURO = 1.32;                                   // faccia interna dei muri
+const RH_L = 0.35;                  // quota della guida sul pianerottolo (fermata)
+const RH   = RH_L;
+const DECK = 0.31;                  // dal centro guida al bordo inferiore della pedana
+/* PROFILO VERTICALE DELLA GUIDA.
+   La pedana resta in bolla, quindi il suo bordo a monte "vede" i gradini piu' alti
+   di quelli sotto il carrello. Perche' non ci affondi, la guida non e' parallela al
+   filo dei gradini ma lo ANTICIPA di 70 cm: comincia a salire gia' sul pianerottolo
+   e si rimette in piano 70 cm prima della fine della rampa. E' esattamente il
+   profilo di una guida curvilinea reale. */
+const ANTIC = 0.70, TSH = ANTIC/RUN, DH = TSH*RISE;
+function yRampa(y0, t){ return y0 + Math.min(1, Math.max(0, t+TSH))*RISE + RH_L; }
+function ss(a){ return a*a*(3-2*a); }   // raccordo dolce
+const PEND = Math.atan2(RISE, RUN) * 180 / Math.PI;   // pendenza reale delle rampe
+
+/* =====================================================================
+   FLOTTA: tre impianti con sviluppo diverso.
+   Il colore delle bandelle e delle coste identifica l'impianto a colpo d'occhio.
+   L'impianto si sceglie con ?impianto=SV01|SV02|SV03 oppure dalla barra in basso.
+   ===================================================================== */
+const IMPIANTI = {
+  SV01: { id:'SV01', rampe:3, edificio:'Palazzina A',    indirizzo:'Via Manzoni 14, Modena',
+          matricola:'SVC-3R-1148', colore:0xf2c200, coloreCss:'#f2c200', livrea:'gialla',
+          file:'impianto_SV01_3rampe.html' },
+  SV02: { id:'SV02', rampe:2, edificio:'Palazzina B',    indirizzo:'Via Cavour 3, Carpi',
+          matricola:'SVC-2R-0932', colore:0xff6a1a, coloreCss:'#ff6a1a', livrea:'arancio',
+          file:'impianto_SV02_2rampe.html' },
+  SV03: { id:'SV03', rampe:1, edificio:'Villa Ginestre', indirizzo:'Via Radici 8, Sassuolo',
+          matricola:'SVC-1R-0517', colore:0x2ea8ff, coloreCss:'#2ea8ff', livrea:'azzurra',
+          file:'impianto_SV03_1rampa.html' }
+};
+const ID_DEFAULT = 'SV02';
+const CFG = IMPIANTI[(new URLSearchParams(location.search).get('impianto')||'').toUpperCase()]
+         || IMPIANTI[ID_DEFAULT];
+const NR = CFG.rampe;                  // numero di rampe
+const NOMI_PIANO = ['Piano terra','Primo piano','Secondo piano','Terzo piano'];
+
+/* Piani serviti: 0..NR, un piano per rampa (come servoscala.py --piani) */
+const PIANI = [];
+for (let i=0;i<=NR;i++)
+  PIANI.push({ n:i, y:i*RISE, nome:NOMI_PIANO[i], st:'ST0'+(i+1) });
+
+/* Dati di targa dell'impianto */
+const TARGA = { portata:250, velocita:0.10, tensione:24, pendMax:55, potMax:2.2 };
+
+/* Soglie del manager - comune.py */
+const SOG = { INATTIVITA_S:25, BATTERIA_BASSA:35, WARNING_CORSE:8, WARNING_ANOMALIE:3,
+              ALARM_USURA:45.0, ALARM_ANOMALIE:5 };
+let LIMITE_PESO = 120.0;     // servoscala.py -> LIMITE_PESO
+/* copia di riferimento: serve a mostrare quanto i valori caricati si discostano
+   da quelli con cui la demo e' stata scritta. Il progetto non viene mai toccato. */
+const SOG_DEF = Object.assign({}, SOG), LIMITE_PESO_DEF = LIMITE_PESO;
+let origineSoglie = 'valori predefiniti, allineati a comune.py';
+
+/* ------------------------------------------------------------ SCENA BASE */
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0f16);
+scene.fog = new THREE.Fog(0x0b0f16, 22, 52);
+
+const camera = new THREE.PerspectiveCamera(46, innerWidth/innerHeight, 0.1, 200);
+camera.position.set(9.5, 8.5, 12.5);
+
+/* --- luci: naturale dalla finestra del vano scala + plafoniere di piano --- */
+scene.add(new THREE.HemisphereLight(0xbdd4f0, 0x1a2030, 0.62));
+const sun = new THREE.DirectionalLight(0xfff3e0, 1.15);
+sun.position.set(9, 15, 7);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 1; sun.shadow.camera.far = 45;
+sun.shadow.camera.left = -12; sun.shadow.camera.right = 12;
+sun.shadow.camera.top = 16;   sun.shadow.camera.bottom = -4;
+sun.shadow.bias = -0.0008;
+scene.add(sun);
+scene.add(new THREE.DirectionalLight(0x88a8d8, 0.28).translateX(-8).translateY(4).translateZ(-6));
+
+/* ------------------------------------------------------------- MATERIALI */
+const M = {
+  gradino : new THREE.MeshStandardMaterial({ color:0xd8d2c6, roughness:0.82, metalness:0.02 }),
+  alzata  : new THREE.MeshStandardMaterial({ color:0xc4bcae, roughness:0.9 }),
+  soletta : new THREE.MeshStandardMaterial({ color:0xcfc8ba, roughness:0.85 }),
+  muro    : new THREE.MeshStandardMaterial({ color:0xeae6dd, roughness:0.96, side:THREE.DoubleSide }),
+  zoccolo : new THREE.MeshStandardMaterial({ color:0x9a9186, roughness:0.7 }),
+  metallo : new THREE.MeshStandardMaterial({ color:0xb9c0c8, roughness:0.34, metalness:0.86 }),
+  metScuro: new THREE.MeshStandardMaterial({ color:0x4a5462, roughness:0.42, metalness:0.75 }),
+  antracit: new THREE.MeshStandardMaterial({ color:0x2b3240, roughness:0.55, metalness:0.35 }),
+  fune    : new THREE.MeshStandardMaterial({ color:0x7b8390, roughness:0.3, metalness:0.95 }),
+  gomma   : new THREE.MeshStandardMaterial({ color:0x1a1e26, roughness:0.95 }),
+  giallo  : new THREE.MeshStandardMaterial({ color:0xf2c200, roughness:0.5, emissive:0x3a2c00 }),
+  livrea  : null,   // assegnato sotto: colore identificativo dell'impianto
+  vetro   : new THREE.MeshStandardMaterial({ color:0xbfd8ee, roughness:0.08, metalness:0.1,
+              transparent:true, opacity:0.28, side:THREE.DoubleSide }),
+  porta   : new THREE.MeshStandardMaterial({ color:0x6b4a34, roughness:0.62 }),
+  tess    : new THREE.MeshStandardMaterial({ color:0x2e3a4d, roughness:0.9 }),
+  pelle   : new THREE.MeshStandardMaterial({ color:0xd8a583, roughness:0.75 }),
+  maglia  : new THREE.MeshStandardMaterial({ color:0x3f6ea8, roughness:0.85 })
+};
+
+M.livrea = new THREE.MeshStandardMaterial({
+  color:CFG.colore, roughness:0.48,
+  emissive:new THREE.Color(CFG.colore).multiplyScalar(0.16) });
+
+function box(w,h,d,mat,x,y,z,parent){
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+  m.position.set(x,y,z); m.castShadow = true; m.receiveShadow = true;
+  (parent||scene).add(m); return m;
+}
+
+/* ================================================================
+   1. VANO SCALA  -  3 rampe con pianerottoli di inversione a 180 gradi
+   ================================================================
+   Impianto planimetrico "scala a pozzo" tipico di un condominio:
+     corsia A (x<0)  rampa 1 (+Z) e rampa 3 (+Z)
+     corsia B (x>0)  rampa 2 (-Z)
+   ================================================================ */
+const edificio = new THREE.Group(); scene.add(edificio);
+const muri = new THREE.Group();     edificio.add(muri);
+
+/* --------------------------------------------------------------------------
+   Impianto planimetrico: le rampe 1 e 3 sono SOVRAPPOSTE sulla corsia A,
+   la rampa 2 sale in senso opposto sulla corsia B. Fra una rampa e l'altra
+   c'e' un pianerottolo con inversione a 180 gradi: e' proprio la curva che
+   una guida a cremagliera tradizionale non affronta e che invece questo impianto,
+   con guida curvilinea a fune, percorre senza interruzioni.
+   -------------------------------------------------------------------------- */
+const ZTURN = RUN + 0.24;              // z su cui si aprono le due curve a 180
+const RAMPE = [];
+for (let j=0;j<NR;j++){
+  const pari = (j % 2 === 0);                 // rampe dispari sulla corsia A
+  RAMPE.push({ i:j+1, x: pari?XA:XB, lane: pari?-0.65:0.65,
+               z0: pari?0.00:ZTURN, dir: pari?+1:-1, y0: j*RISE,
+               zStop: pari?ZTURN:0.00 });     // sosta / attacco curva a fine rampa
+}
+
+function costruisciRampa(r){
+  for (let k=0; k<NGRAD; k++){
+    const y = r.y0 + (k+1)*ALZATA;
+    const z = r.z0 + r.dir*(k*PEDATA + PEDATA/2);
+    box(LANE, 0.05, PEDATA, M.gradino, r.lane, y-0.025, z, edificio);
+    box(LANE, ALZATA, 0.045, M.alzata, r.lane, y-ALZATA/2,
+        z - r.dir*(PEDATA/2 - 0.022), edificio);
+  }
+  const L = Math.hypot(RUN, RISE);
+  const s = new THREE.Mesh(new THREE.BoxGeometry(LANE, 0.16, L), M.soletta);
+  s.position.set(r.lane, r.y0 + RISE/2 - 0.13, r.z0 + r.dir*RUN/2);
+  s.rotation.x = -r.dir * Math.atan2(RISE, RUN);
+  s.castShadow = true; s.receiveShadow = true; edificio.add(s);
+}
+RAMPE.forEach(costruisciRampa);
+
+/* pianerottoli: P0/P2 lato ingresso, P1/P3 lato inversione */
+/* i pianerottoli si alternano fra la banda "bassa" (lato ingresso) e la "alta"
+   (lato inversione), esattamente come le rampe si alternano fra le due corsie */
+const PIANEROTTOLI = [];
+for (let i=0;i<=NR;i++)
+  PIANEROTTOLI.push( (i % 2 === 0)
+    ? { y:i*RISE, z0:-LAND+0.24, z1:0.24 }
+    : { y:i*RISE, z0:RUN,        z1:RUN+LAND } );
+PIANEROTTOLI.forEach(p=>{
+  const d = p.z1 - p.z0, zc = (p.z0+p.z1)/2;
+  box(XMURO*2, 0.18, d, M.soletta, 0, p.y-0.09, zc, edificio);
+  const pl = new THREE.PointLight(0xffeed2, 0.5, 7.0, 2);
+  pl.position.set(0, p.y+2.30, zc); edificio.add(pl);
+  const cp = new THREE.Mesh(new THREE.BoxGeometry(0.34,0.05,0.34),
+    new THREE.MeshStandardMaterial({ color:0xfff8ea, emissive:0xffeac4, emissiveIntensity:1.6 }));
+  cp.position.set(0, p.y+2.44, zc); edificio.add(cp);
+});
+
+/* muri perimetrali (nascondibili dalla barra in basso) */
+const HMURO = RISE*NR + 2.9;
+const ZMIN = -LAND+0.24-0.08, ZMAX = RUN+LAND+0.08;
+const ZC = (ZMIN+ZMAX)/2, ZD = ZMAX-ZMIN;
+box(0.16, HMURO, ZD, M.muro, -XMURO-0.08, HMURO/2-1.0, ZC, muri);
+box(0.16, HMURO, ZD, M.muro,  XMURO+0.08, HMURO/2-1.0, ZC, muri);
+box(XMURO*2+0.16, HMURO, 0.16, M.muro, 0, HMURO/2-1.0, ZMAX+0.08, muri);
+box(XMURO*2+0.16, HMURO, 0.16, M.muro, 0, HMURO/2-1.0, ZMIN-0.08, muri);
+
+/* finestre del vano scala sul lato B, ai pianerottoli della banda alta */
+PIANEROTTOLI.filter((p,i)=>i%2===1).map(p=>p.y).forEach(y=>{
+  box(0.11, 1.42, 1.12, M.metScuro, XMURO-0.03, y+1.30, RUN+0.74, muri);
+  box(0.05, 1.28, 0.98, M.vetro,    XMURO-0.06, y+1.30, RUN+0.74, muri);
+});
+
+/* corrimano centrale */
+function corrimano(x, z0, z1, y0, y1){
+  const a = new THREE.Vector3(x, y0+0.94, z0), b = new THREE.Vector3(x, y1+0.94, z1);
+  const len = a.distanceTo(b);
+  const t = new THREE.Mesh(new THREE.CylinderGeometry(0.026,0.026,len,10), M.metallo);
+  t.position.copy(a).lerp(b,0.5);
+  t.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), b.clone().sub(a).normalize());
+  t.castShadow = true; edificio.add(t);
+  const n = Math.max(2, Math.round(len/0.95));
+  for (let i=0;i<=n;i++){
+    const p = a.clone().lerp(b, i/n);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.013,0.013,0.94,8), M.metScuro);
+    post.position.set(p.x, p.y-0.47, p.z); post.castShadow = true; edificio.add(post);
+  }
+}
+/* corrimano a muro, sostenuto da mensole: passa sopra la guida del servoscala
+   e resta fuori dall'ingombro della pedana */
+function corrimanoMuro(xr, xw, z0, z1, y0, y1){
+  const a = new THREE.Vector3(xr, y0+0.96, z0), b = new THREE.Vector3(xr, y1+0.96, z1);
+  const len = a.distanceTo(b);
+  const t = new THREE.Mesh(new THREE.CylinderGeometry(0.024,0.024,len,10), M.metallo);
+  t.position.copy(a).lerp(b,0.5);
+  t.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), b.clone().sub(a).normalize());
+  t.castShadow = true; edificio.add(t);
+  const n = Math.max(2, Math.round(len/1.30));
+  for (let i=0;i<=n;i++){
+    const p = a.clone().lerp(b, i/n);
+    box(Math.abs(xw-xr), 0.03, 0.03, M.metScuro, (xr+xw)/2, p.y, p.z, edificio);
+  }
+}
+/* il corrimano centrale corre sul filo x=0: la pedana si ferma a 12 cm da qui */
+RAMPE.forEach(r=>{
+  const z1 = r.z0 + r.dir*RUN, xm = (r.x<0 ? -XMURO : XMURO);
+  corrimano( 0.00, r.z0, z1, r.y0, r.y0+RISE);
+  corrimanoMuro(xm + (r.x<0 ? 0.06 : -0.06), xm, r.z0, z1, r.y0, r.y0+RISE);
+});
+
+/* porte di piano */
+function portaPiano(p, x, z, rotY){
+  const g = new THREE.Group(); g.position.set(x, p.y, z); g.rotation.y = rotY; edificio.add(g);
+  box(0.95, 2.10, 0.07, M.porta, 0, 1.05, 0, g);
+  box(1.08, 2.22, 0.04, M.metScuro, 0, 1.11, -0.035, g);
+  box(0.05, 0.05, 0.09, M.metallo, 0.36, 1.02, 0.06, g);
+  box(0.17, 0.115, 0.012, new THREE.MeshStandardMaterial({
+    color:0xd9c98a, roughness:0.35, metalness:0.65 }), 0, 1.64, 0.045, g);
+}
+PIANI.forEach(p=> (p.n % 2 === 0)
+  ? portaPiano(p, -0.62, -LAND+0.22,    0)
+  : portaPiano(p,  0.64, RUN+LAND-0.04, Math.PI));
+
+/* ================================================================
+   2. GUIDA CURVILINEA  (il cuore dell'impianto)
+   Una sola guida continua a doppio tubo che parte dal piano terra,
+   affronta le due inversioni a 180 gradi sui pianerottoli e arriva
+   al terzo piano. Nessuna interruzione, nessun trasbordo.
+   ================================================================ */
+const RP = [];
+const V = (x,y,z)=>RP.push(new THREE.Vector3(x,y,z));
+
+V(XA, RH_L, -0.86); V(XA, RH_L, -0.76);                               // parcheggio piano terra
+RAMPE.forEach((r, j)=>{
+  const yl = (j+1)*RISE;                                              // quota del pianerottolo di arrivo
+  /* la prima rampa parte gia' sul pianerottolo (t negativo): e' li' che la guida
+     comincia a salire, prima di incontrare il primo gradino */
+  const i0 = (j === 0) ? 0 : 1, tMin = (j === 0) ? -TSH : 0;
+  for (let i=i0;i<=22;i++){ const t = tMin + (1-tMin)*i/22;
+    V(r.x, yRampa(r.y0, t), r.z0 + r.dir*t*RUN); }
+  V(r.x, yl+RH_L, r.zStop);                                           // fermata di piano
+  if (j < NR-1){                                                      // curva a 180 verso l'altra corsia
+    const pari = (j % 2 === 0), zc = r.zStop;
+    for (let i=1;i<22;i++){ const a=i/22, th = pari ? Math.PI*(1-a) : -Math.PI*a;
+      V(RCURVA*Math.cos(th), yl+RH_L + DH*ss(a), zc + RCURVA*Math.sin(th)); }
+    V(pari?XB:XA, yl+RH_L+DH, zc);
+  } else {                                                            // parcheggio all'ultimo piano
+    if (j % 2 === 0){ V(r.x, yl+RH_L, RUN+0.55); V(r.x, yl+RH_L, RUN+1.06); }
+    else            { V(r.x, yl+RH_L, -0.52);    V(r.x, yl+RH_L, -0.86); }
+  }
+});
+
+const CURVA = new THREE.CatmullRomCurve3(RP, false, 'centripetal', 0.5);
+const LUNG  = CURVA.getLength();
+const NS = 1600, SP = [];
+for (let i=0;i<=NS;i++) SP.push(CURVA.getPointAt(i/NS));
+function uVicino(t){ let bi=0,bd=1e9;
+  for (let i=0;i<=NS;i++){ const d=SP[i].distanceToSquared(t); if(d<bd){bd=d;bi=i;} } return bi/NS; }
+
+const U_PIANO = [ uVicino(new THREE.Vector3(XA, RH_L, -0.80)) ];
+for (let p=1;p<=NR;p++){
+  const r = RAMPE[p-1], y = p*RISE + RH_L;
+  U_PIANO.push( p < NR
+    ? uVicino(new THREE.Vector3(r.x, y, r.zStop))
+    : uVicino(new THREE.Vector3(r.x, y, (p-1)%2===0 ? RUN+0.98 : -0.80)) );
+}
+
+/* quota del calpestio sotto un punto (per i piedini della guida) */
+function quotaSotto(x,y,z){
+  let best = -99;
+  for (const p of PIANEROTTOLI)
+    if (z >= p.z0-0.06 && z <= p.z1+0.06 && p.y <= y+0.02 && p.y > best) best = p.y;
+  for (const r of RAMPE){
+    if ((x<0) !== (r.lane<0)) continue;
+    const zi = (z - r.z0) * r.dir;
+    if (zi < -0.06 || zi > RUN+0.06) continue;
+    const yy = r.y0 + Math.min(RISE, Math.max(0, Math.ceil(zi/PEDATA)*ALZATA));
+    if (yy <= y+0.02 && yy > best) best = yy;
+  }
+  return best < -50 ? 0 : best;
+}
+
+/* --- tubi della guida: due tubi sovrapposti + fune di trazione --- */
+const guida = new THREE.Group(); scene.add(guida);
+function tuboGuida(dy, r, mat){
+  const c = new THREE.CatmullRomCurve3(RP.map(p=>new THREE.Vector3(p.x, p.y+dy, p.z)),
+              false, 'centripetal', 0.5);
+  const m = new THREE.Mesh(new THREE.TubeGeometry(c, 700, r, 12, false), mat);
+  m.castShadow = true; guida.add(m); return m;
+}
+tuboGuida( 0.055, 0.029, M.metallo);
+tuboGuida(-0.055, 0.029, M.metallo);
+tuboGuida(-0.135, 0.0075, M.fune);          // fune di trazione (trazione a fune)
+
+/* --- staffe di sostegno a pavimento --- */
+{
+  const n = Math.floor(LUNG/1.05);
+  for (let i=0;i<=n;i++){
+    const u = Math.min(0.999, (i+0.35)/(n+1));
+    const p = CURVA.getPointAt(u);
+    const yf = quotaSotto(p.x, p.y, p.z);
+    const h  = Math.max(0.12, p.y - 0.085 - yf);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.026,0.03,h,10), M.metScuro);
+    post.position.set(p.x, yf + h/2, p.z); post.castShadow = true; guida.add(post);
+    box(0.14, 0.018, 0.14, M.metScuro, p.x, yf+0.01, p.z, guida);
+    box(0.075, 0.075, 0.075, M.antracit, p.x, p.y, p.z, guida);
+  }
+}
+
+/* --- fine corsa / sensori di piano sulla guida --- */
+const sensoriPiano = U_PIANO.map(u=>{
+  const p = CURVA.getPointAt(u);
+  const s = box(0.055,0.055,0.10, new THREE.MeshStandardMaterial({
+    color:0xf2c200, emissive:0x201800, roughness:0.5 }), p.x-0.06, p.y+0.10, p.z, guida);
+  return s;
+});
+
+/* --- motrice a monte: in questo impianto il motore NON e' a bordo --- */
+{
+  const g = new THREE.Group(), ru = RAMPE[NR-1], su = ((NR-1) % 2 === 0);
+  g.position.set(ru.x + (ru.x<0 ? -0.02 : 0.02), NR*RISE+0.33, su ? RUN+1.28 : -1.08);
+  if (!su) g.rotation.y = Math.PI;
+  guida.add(g);
+  box(0.30, 0.42, 0.52, M.antracit, 0, 0, 0, g);
+  box(0.32, 0.055, 0.40, M.metScuro, 0, 0.14, 0, g);
+  box(0.32, 0.055, 0.40, M.metScuro, 0, 0.02, 0, g);
+  const pul = new THREE.Mesh(new THREE.CylinderGeometry(0.10,0.10,0.05,20), M.metallo);
+  pul.rotation.z = Math.PI/2; pul.position.set(0.17, -0.04, -0.20); g.add(pul);
+  box(0.12,0.09,0.02, new THREE.MeshStandardMaterial({
+    color:0x0d3a24, emissive:0x0f7a45, emissiveIntensity:1.2 }), 0.16, 0.14, 0.24, g);
+}
+
+/* ================================================================
+   3. SERVOSCALA A PIATTAFORMA
+   ================================================================ */
+/* texture antiscivolo della pedana */
+function texAntiscivolo(){
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const x = c.getContext('2d');
+  x.fillStyle = '#3a4250'; x.fillRect(0,0,256,256);
+  x.fillStyle = '#2c333f';
+  for (let i=6;i<256;i+=13) for (let j=6;j<256;j+=13){ x.beginPath(); x.arc(i,j,3.1,0,7); x.fill(); }
+  x.strokeStyle = '#f2c200'; x.lineWidth = 14; x.strokeRect(7,7,242,242);
+  const t = new THREE.CanvasTexture(c); t.anisotropy = 4; return t;
+}
+/* display di bordo (aggiornato in tempo reale) */
+const dispCv = document.createElement('canvas'); dispCv.width = 256; dispCv.height = 128;
+const dispTex = new THREE.CanvasTexture(dispCv);
+function aggiornaDisplay(riga1, riga2, col){
+  const x = dispCv.getContext('2d');
+  x.fillStyle = '#06110c'; x.fillRect(0,0,256,128);
+  x.strokeStyle = '#123'; x.lineWidth = 6; x.strokeRect(3,3,250,122);
+  x.fillStyle = col; x.font = 'bold 62px ui-monospace,monospace'; x.textAlign = 'center';
+  x.fillText(riga1, 128, 68);
+  x.font = 'bold 22px ui-monospace,monospace'; x.fillStyle = '#7fe8b0';
+  x.fillText(riga2, 128, 104);
+  dispTex.needsUpdate = true;
+}
+aggiornaDisplay('P0','PRONTO','#8ff0c0');
+
+const mover    = new THREE.Group(); scene.add(mover);   // segue la guida (yaw)
+const carrello = new THREE.Group(); mover.add(carrello); // si inclina con la guida
+const pendino  = new THREE.Group(); mover.add(pendino);  // resta SEMPRE in bolla
+
+/* carrello di trascinamento: compatto, senza motore a bordo */
+box(0.20, 0.24, 0.46, M.antracit, 0, 0, 0, carrello);
+box(0.22, 0.075, 0.30, M.metScuro, 0, 0.115, 0, carrello);
+[-0.16, 0.16].forEach(z=>[0.055,-0.055].forEach(y=>{
+  const w = new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.045,0.035,14), M.metallo);
+  w.rotation.x = Math.PI/2; w.position.set(0.055, y, z); carrello.add(w);
+}));
+box(0.045,0.10,0.16, M.fune, -0.10, 0, 0, carrello);   // morsetto fune
+
+/* braccio + pedana (in bolla: l'auto-livellamento e' gestito qui) */
+const colonna = box(0.10, 0.66, 0.16, M.antracit, 0.22, 0.01, 0, pendino);
+box(0.26, 0.09, 0.17, M.antracit, 0.11, 0.10, 0, pendino);
+
+/* il calpestio della pedana resta ~8,5 cm sopra il pavimento: il dislivello lo
+   raccordano le bandelle, che a terra si abbassano a rampa */
+const pedana = new THREE.Group(); pedana.position.set(0.28, -(DECK-0.024), 0); pendino.add(pedana);
+
+/* parapetto lato guida: fisso, non si ribalta */
+box(0.07, 0.98, 0.74, M.antracit, 0.02, 0.49, 0, pedana);
+box(0.07, 0.06, 0.74, M.metallo, 0.02, 0.97, 0, pedana);
+
+/* GRUPPO RIBALTABILE: solo il calpestio zigrinato e le sue bandelle gialle.
+   E' l'unica parte che si chiude, ruotando contro il parapetto come negli impianti
+   reali; colonnina comandi e parapetto restano al loro posto. */
+const pedanaFold = new THREE.Group(); pedanaFold.position.set(0.06, 0, 0); pedana.add(pedanaFold);
+
+const matDeck = new THREE.MeshStandardMaterial({ map:texAntiscivolo(), roughness:0.88 });
+box(0.80, 0.045, 0.72, matDeck, 0.34, 0, 0, pedanaFold);                   // piano di calpestio
+box(0.84, 0.042, 0.76, M.livrea, 0.34, -0.003, 0, pedanaFold);             // coste di sicurezza
+
+/* bandelle: a terra sono rampe di accesso, in corsa diventano barriere */
+function bandella(zSeg){
+  const piv = new THREE.Group(); piv.position.set(0.34, 0.0, zSeg*0.36); pedanaFold.add(piv);
+  box(0.80, 0.032, 0.26, M.livrea, 0, -0.010, zSeg*0.13, piv);
+  return piv;
+}
+const bandA = bandella( 1), bandB = bandella(-1);
+
+/* colonnina comandi con joystick e display */
+const colComandi = new THREE.Group(); colComandi.position.set(0.17, 0.03, 0.29); pedana.add(colComandi);
+box(0.075, 0.86, 0.075, M.antracit, 0, 0.43, 0, colComandi);
+box(0.20, 0.15, 0.15, M.antracit, 0.05, 0.90, 0, colComandi);
+const displayMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.145, 0.072),
+  new THREE.MeshBasicMaterial({ map:dispTex }));
+displayMesh.position.set(0.152, 0.93, 0); displayMesh.rotation.y = Math.PI/2; colComandi.add(displayMesh);
+const joy = box(0.022, 0.075, 0.022, M.giallo, 0.10, 0.86, 0.055, colComandi);
+const btnEmg3D = new THREE.Mesh(new THREE.CylinderGeometry(0.026,0.026,0.016,14),
+  new THREE.MeshStandardMaterial({ color:0xd8202e, roughness:0.5 }));
+btnEmg3D.rotation.z = Math.PI/2; btnEmg3D.position.set(0.155, 0.86, -0.045); colComandi.add(btnEmg3D);
+
+/* ---- carrozzina + passeggero (rivolti verso il vuoto scala) ---- */
+let torsoRef = null;
+const passeggero = new THREE.Group(); passeggero.position.set(0.37, 0.023, 0); pedana.add(passeggero);
+{
+  const g = passeggero;
+  [0.26,-0.26].forEach(z=>{
+    const w = new THREE.Mesh(new THREE.TorusGeometry(0.255,0.020,8,26), M.gomma);
+    w.position.set(-0.03,0.255,z); g.add(w);
+    const h = new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.055,0.028,14), M.metallo);
+    h.rotation.x = Math.PI/2; h.position.set(-0.03,0.255,z); g.add(h);
+    for (let k=0;k<8;k++){
+      const s = new THREE.Mesh(new THREE.CylinderGeometry(0.005,0.005,0.49,5), M.metallo);
+      s.position.set(-0.03,0.255,z); s.rotation.z = k*Math.PI/8; g.add(s);
+    }
+  });
+  [0.17,-0.17].forEach(z=>{
+    const c = new THREE.Mesh(new THREE.TorusGeometry(0.075,0.016,8,18), M.gomma);
+    c.position.set(0.30,0.075,z); g.add(c);
+    box(0.02,0.14,0.02, M.metScuro, 0.30, 0.15, z, g);
+  });
+  box(0.40, 0.055, 0.44, M.tess,  0.06, 0.44, 0, g);                 // seduta
+  box(0.055, 0.50, 0.44, M.tess, -0.16, 0.70, 0, g);                 // schienale
+  [0.245,-0.245].forEach(z=>box(0.34,0.045,0.045, M.antracit, 0.06, 0.63, z, g));  // braccioli
+  box(0.16,0.03,0.30, M.metScuro, 0.30, 0.12, 0, g);                 // pedanina piedi
+  box(0.03,0.36,0.03, M.metScuro, 0.24, 0.28, 0.13, g);
+  box(0.03,0.36,0.03, M.metScuro, 0.24, 0.28,-0.13, g);
+  /* persona seduta */
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.145,0.170,0.46,14), M.maglia);
+  torso.position.set(0.00,0.73,0); torso.rotation.z = -0.07; g.add(torso);
+  torsoRef = torso;
+  const testa = new THREE.Mesh(new THREE.SphereGeometry(0.105,18,14), M.pelle);
+  testa.position.set(0.02,1.05,0); g.add(testa);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.108,18,10,0,6.3,0,1.15),
+    new THREE.MeshStandardMaterial({ color:0x5b4636, roughness:0.9 }));
+  cap.position.set(0.02,1.05,0); cap.rotation.z = -0.16; g.add(cap);
+  [0.20,-0.20].forEach(z=>{                                          // gambe
+    const cos = new THREE.Mesh(new THREE.CylinderGeometry(0.062,0.058,0.34,10), M.tess);
+    cos.position.set(0.16,0.50,z*0.62); cos.rotation.z = Math.PI/2; g.add(cos);
+    const pol = new THREE.Mesh(new THREE.CylinderGeometry(0.052,0.05,0.34,10), M.tess);
+    pol.position.set(0.31,0.30,z*0.62); g.add(pol);
+    box(0.15,0.06,0.085, M.gomma, 0.32,0.155,z*0.62, g);
+    const br = new THREE.Mesh(new THREE.CylinderGeometry(0.048,0.045,0.40,10), M.maglia);
+    br.position.set(0.05,0.73,z*1.05); br.rotation.x = z>0?-0.12:0.12; g.add(br);
+  });
+}
+passeggero.traverse(o=>{ if(o.isMesh){o.castShadow=true;} });
+pedana.traverse(o=>{ if(o.isMesh){o.castShadow=true; o.receiveShadow=true;} });
+carrello.traverse(o=>{ if(o.isMesh) o.castShadow = true; });
+
+/* ================================================================
+   4. STAZIONI DI CHIAMATA DI PIANO (ST01..ST04)
+   ================================================================ */
+const LED_COL = { libero:0x25d07a, in_arrivo:0xffb020, occupato:0xff4d5e };
+const stazioni3D = PIANI.map((p,i)=>{
+  const g = new THREE.Group();
+  const alta = (i % 2 === 1);
+  const z = alta ? RUN+LAND-0.34 : -LAND+0.50;
+  const x = alta ? XMURO-0.02 : -XMURO+0.02;
+  g.position.set(x, p.y+1.05, z);
+  g.rotation.y = x>0 ? -Math.PI/2 : Math.PI/2;
+  edificio.add(g);
+  box(0.15, 0.24, 0.05, M.antracit, 0, 0, 0.03, g);
+  box(0.05, 0.05, 0.03, new THREE.MeshStandardMaterial({ color:0xdde3ea, roughness:0.4 }),
+      0, -0.05, 0.06, g);
+  const ledMat = new THREE.MeshStandardMaterial({
+    color:0x25d07a, emissive:0x25d07a, emissiveIntensity:1.9, roughness:0.3 });
+  const led = new THREE.Mesh(new THREE.SphereGeometry(0.028,14,10), ledMat);
+  led.position.set(0, 0.06, 0.055); g.add(led);
+  return { g, led, ledMat, piano:p.n, id:p.st };
+});
+
+/* ================================================================
+   5. STATO DELLO SMART OBJECT
+   Ricalca uno-a-uno il payload di servoscala.py
+   ================================================================ */
+const LIBERI = () => PIANI.map(()=> 'libero');
+const NESSUNA = () => PIANI.map(()=> false);
+
+const S = {
+  device_id:CFG.id, edificio:CFG.edificio,
+  stato:'idle', piano_corrente:0,
+  livello_batteria:96.4, assorbimento_motore:0.0, contatore_corse:0,
+  modalita_ricarica:'lenta', indicatore_stato:'operativo',
+  /* stato fisico locale */
+  u:U_PIANO[0], target:null, manuale:0, emergenza:false,
+  peso:78, aBordo:true, pedanaChiusa:false, velFattore:4,
+  pianoPartenza:0, pianoTarget:null, durataCorsa:0, assorbCorsa:0, rumore:0, sovrNotif:false,
+  /* lato manager */
+  n_anomalie:0, ultimoCodice:'—', usura:0, oreMotore:0,
+  livelloManutenzione:'nessuno', ultimaCorsa:performance.now()/1000,
+  notificatoBenessere:false, ricaricaComandata:null,
+  ledStazioni:LIBERI(), chiamate:NESSUNA(),
+  ostacoloCoste:false, auto:false, tour:false
+};
+
+/* ------------------------------------------------------------- LOG MQTT */
+const logbody = document.getElementById('logbody');
+function ora(){ const d=new Date();
+  return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+
+         ':'+String(d.getSeconds()).padStart(2,'0'); }
+
+/* Registro condiviso: il messaggio piu' recente sta SEMPRE in testa e i vecchi
+   scendono. Cosi' il punto in cui guardare non si sposta mai, e non serve
+   nessuno scorrimento automatico che ti costringa a rincorrere le righe. */
+const MSGS = []; let msgSeq = 0;
+function pub(cls, topic, payload){
+  const j = JSON.stringify(payload);
+  const m = { n:++msgSeq, t:ora(), cls, topic, j };
+  MSGS.unshift(m);
+  if (MSGS.length > 400) MSGS.pop();      // ~10 minuti di cronologia
+  const e = document.createElement('div'); e.className = 'le '+cls;
+  e.innerHTML = '<span class="t">'+m.t+'</span><span class="tp">'+topic+' '+
+    (j.length>96 ? j.slice(0,96)+'…' : j)+'</span>';
+  logbody.insertBefore(e, logbody.firstChild);
+  while (logbody.children.length > 60) logbody.removeChild(logbody.lastChild);
+  ultimoPayload[topic.split('/').pop()] = payload;
+}
+const ultimoPayload = {};
+function nowIso(){ return new Date().toISOString().slice(0,19); }
+
+function pubTelemetria(){
+  if (window.FILM_PAUSA) return;          // fermo immagine del documentario
+  pub('tel', 'servoscala/'+CFG.id+'/telemetria', {
+    device_id:S.device_id, edificio:S.edificio, stato:S.stato,
+    piano_corrente:S.piano_corrente, livello_batteria:+S.livello_batteria.toFixed(1),
+    assorbimento_motore:+S.assorbimento_motore.toFixed(2), contatore_corse:S.contatore_corse,
+    modalita_ricarica:S.modalita_ricarica, indicatore_stato:S.indicatore_stato,
+    timestamp:nowIso() });
+}
+function pubEvento(tipo, codice, descrizione){
+  S.n_anomalie++; S.ultimoCodice = codice;
+  pub('evt', 'servoscala/'+CFG.id+'/evento',
+    { device_id:S.device_id, tipo, codice_errore:codice, descrizione, timestamp:nowIso() });
+  toast(tipo === 'emergenza' ? 'alarm' : 'warn', 'evento &middot; '+codice, descrizione);
+}
+function pubComando(topic, valore){ pub('cmd', topic, { valore, timestamp:nowIso() }); }
+function pubNotifica(tipo, messaggio){
+  pub('not', 'manager/notifica',
+    { tipo, device_id:S.device_id, messaggio, timestamp:nowIso() });
+  toast(tipo === 'manutenzione_urgente' ? 'alarm' : (tipo === 'benessere' ? 'ok' : 'warn'),
+        'manager &middot; '+tipo.replace(/_/g,' '), messaggio);
+}
+
+/* --------------------------------------------------------------- TOAST */
+const toastBox = document.getElementById('toasts');
+function toast(kind, titolo, testo){
+  const d = document.createElement('div');
+  d.className = 'toast '+(kind==='alarm'?'alarm':kind==='ok'?'ok':'');
+  d.innerHTML = '<b>'+titolo+'</b>'+testo;
+  toastBox.appendChild(d);
+  setTimeout(()=>{ d.style.transition='opacity .4s'; d.style.opacity=0;
+                   setTimeout(()=>d.remove(),400); }, 5200);
+  while (toastBox.children.length > 4) toastBox.firstChild.remove();
+}
+
+/* ================================================================
+   6. LOGICA DI MOVIMENTO
+   ================================================================ */
+/* Comanda il LED di una stazione SOLO se il valore cambia davvero.
+   Senza questo controllo due percorsi diversi accendevano lo stesso LED:
+   la pressione del pulsante (che replica _gestisci_pulsante di manager.py) e
+   l'avvio della corsa (che mette le altre stazioni su 'occupato'). Il risultato
+   erano due comandi identici sulla stazione chiamante. E' la stessa cautela che
+   manager.py applica al comando di ricarica con 'ricarica_comandata'. */
+function pubLed(i, v){
+  if (S.ledStazioni[i] === v) return;
+  S.ledStazioni[i] = v;
+  pubComando('chiamata/'+PIANI[i].st+'/comando/led', v);
+}
+const tuttiLed = v => PIANI.forEach((_,k)=>pubLed(k, v));
+
+function pianoDaU(u){
+  let best=0, bd=1e9;
+  U_PIANO.forEach((up,i)=>{ const d=Math.abs(up-u); if(d<bd){bd=d;best=i;} });
+  return bd < 0.017 ? best : null;
+}
+function rampaDaU(u){
+  if (u <= U_PIANO[0]+0.004) return 0;
+  if (u >= U_PIANO[NR]-0.004) return 0;
+  for (let i=0;i<NR;i++) if (u > U_PIANO[i] && u < U_PIANO[i+1]) return i+1;
+  return 0;
+}
+
+function vaiA(piano, origine){
+  if (S.emergenza){ toast('alarm','manovra rifiutata','Emergenza inserita: sbloccare prima di ripartire.'); return; }
+  if (S.pedanaChiusa){ toast('warn','manovra rifiutata','Pedana chiusa: aprirla per iniziare la corsa.'); return; }
+  if (S.aBordo && S.peso > LIMITE_PESO){
+    pubEvento('sovraccarico','E12',
+      'Peso '+S.peso.toFixed(1)+' kg oltre il limite di '+LIMITE_PESO.toFixed(1)+' kg');
+    return;
+  }
+  if (Math.abs(U_PIANO[piano]-S.u) < 0.003){          // gia' a questo piano
+    S.chiamate[piano] = false;
+    tuttiLed('libero');
+    return;
+  }
+  S.manuale = 0;
+  S.pianoPartenza = S.piano_corrente;
+  S.pianoTarget = piano;
+  S.target = U_PIANO[piano];
+  S.stato = (S.target > S.u) ? 'salita' : 'discesa';
+  S.durataCorsa = 0;
+  S.rumore = Math.random()*0.4 - 0.2;   // stessa formula di servoscala.py
+  PIANI.forEach((_,k)=>pubLed(k, k===piano ? 'in_arrivo' : 'occupato'));
+  pubTelemetria();
+}
+
+function arrivo(){
+  const piano = pianoDaU(S.u);
+  S.target = null; S.pianoTarget = null; S.stato = 'idle'; S.assorbimento_motore = 0;
+  if (piano !== null){
+    S.piano_corrente = piano;
+    S.chiamate[piano] = false;
+    S.contatore_corse++;
+    S.usura += S.assorbCorsa;
+    S.livello_batteria = Math.max(0, S.livello_batteria - (0.4 + Math.random()*0.8));
+    S.ultimaCorsa = performance.now()/1000;
+    S.notificatoBenessere = false;
+    pub('cor','servoscala/'+CFG.id+'/corsa', {
+      device_id:S.device_id, peso_kg:S.aBordo ? +S.peso.toFixed(1) : 0,
+      assorbimento_medio:+S.assorbCorsa.toFixed(2),
+      piano_partenza:S.pianoPartenza, piano_arrivo:piano,
+      durata_s:+S.durataCorsa.toFixed(1), timestamp:nowIso() });
+  }
+  tuttiLed('libero');
+  pubTelemetria();
+}
+
+/* chiamata dalla stazione di piano (sensore -> manager -> attuatore LED) */
+function chiamataPiano(i){
+  pub('puls','chiamata/'+PIANI[i].st+'/pulsante',
+    { device_id:PIANI[i].st, piano:i, premuto:true, timestamp:nowIso() });
+  S.chiamate[i] = true;
+  pubLed(i, 'in_arrivo');            // come _gestisci_pulsante() di manager.py
+  vaiA(i,'chiamata');
+}
+
+/* ================================================================
+   7. REGOLE DEL MANAGER  (manager.py, soglie in comune.py)
+   ================================================================ */
+function valutaRegole(){
+  if (window.FILM_PAUSA) return;          // fermo immagine del documentario
+  const t = performance.now()/1000;
+  /* R2 - benessere / inattivita'.
+     Un impianto in movimento e' attivo per definizione, e uno in emergenza non e'
+     fermo per scelta: in entrambi i casi il conteggio dell'inattivita' riparte.
+     Nell'emulatore Python il problema non si presenta perche' una corsa dura al
+     massimo 3 secondi; qui, alla velocita' di targa, una salita di 3 rampe ne dura
+     oltre 250 e senza questo controllo la notifica scatterebbe a pedana in moto. */
+  if (S.stato === 'salita' || S.stato === 'discesa' || S.emergenza){
+    S.ultimaCorsa = t;
+    S.notificatoBenessere = false;
+  }
+  const inattivo = t - S.ultimaCorsa;
+  if (inattivo > SOG.INATTIVITA_S && !S.notificatoBenessere){
+    pubNotifica('benessere',
+      'Nessuna corsa da '+Math.round(inattivo)+' s: possibile segnale da verificare.');
+    S.notificatoBenessere = true;
+  }
+  /* R4 - ricarica intelligente */
+  const atteso = (t - S.ultimaCorsa) < 12;
+  const desiderata = (atteso || S.livello_batteria < SOG.BATTERIA_BASSA) ? 'veloce' : 'lenta';
+  if (desiderata !== S.ricaricaComandata){
+    pubComando('servoscala/'+CFG.id+'/comando/ricarica', desiderata);
+    S.ricaricaComandata = desiderata; S.modalita_ricarica = desiderata;
+  }
+  /* R5 / R6 - manutenzione predittiva */
+  let liv = 'nessuno';
+  if (S.usura > SOG.ALARM_USURA || S.n_anomalie >= SOG.ALARM_ANOMALIE) liv = 'alarm';
+  else if (S.contatore_corse > SOG.WARNING_CORSE || S.n_anomalie >= SOG.WARNING_ANOMALIE) liv = 'warning';
+  const ord = { nessuno:0, warning:1, alarm:2 };
+  if (ord[liv] > ord[S.livelloManutenzione]){
+    if (liv === 'warning')
+      pubNotifica('manutenzione_programmata',
+        'Soglia WARNING: corse='+S.contatore_corse+', anomalie='+S.n_anomalie+'. Pianificare manutenzione.');
+    else {
+      pubNotifica('manutenzione_urgente',
+        'Soglia ALARM: usura='+S.usura.toFixed(1)+', anomalie='+S.n_anomalie+'. Manutenzione urgente.');
+      pubComando('servoscala/'+CFG.id+'/comando/indicatore','manutenzione_necessaria');
+      S.indicatore_stato = 'manutenzione_necessaria';
+    }
+    S.livelloManutenzione = liv;
+  }
+}
+setInterval(valutaRegole, 4000);
+setInterval(pubTelemetria, 2500);
+
+/* guasto raro, come _forse_evento_casuale() */
+setInterval(()=>{
+  if (S.emergenza || window.MODO_FILM) return;   // nel documentario gli eventi sono scriptati
+  const r = Math.random();
+  if (r < 0.028) pubEvento('errore','E07','Anomalia generica del sistema');
+}, 12000);
+
+/* ================================================================
+   8. CAMERA ORBITALE + INQUADRATURE
+   ================================================================ */
+const DTOT = 8.5 + NR*3.0, YTOT = NR*RISE/2 + 1.1;
+const cam = { th:0.92, ph:1.10, d:DTOT, tgt:new THREE.Vector3(0,YTOT,2.3),
+              Th:0.92, Ph:1.10, D:DTOT, Tgt:new THREE.Vector3(0,YTOT,2.3), modo:'totale' };
+const VISTE = {
+  totale  : { Th:0.92, Ph:1.10, D:DTOT, T:new THREE.Vector3(0,YTOT,2.3) },
+  segui   : { Th:0.85, Ph:1.20, D:4.6 },
+  bordo   : {},
+  carrello: { Th:1.55, Ph:1.25, D:1.9 }
+};
+function setVista(m){
+  cam.modo = m;
+  document.querySelectorAll('#cambtns .btn').forEach(b=>b.classList.toggle('on', b.dataset.v===m));
+  if (m === 'totale'){ Object.assign(cam, { Th:VISTE.totale.Th, Ph:VISTE.totale.Ph, D:VISTE.totale.D });
+    cam.Tgt.copy(VISTE.totale.T); }
+  if (m === 'segui'){ Object.assign(cam, { Th:VISTE.segui.Th, Ph:VISTE.segui.Ph, D:VISTE.segui.D }); }
+  if (m === 'carrello'){ Object.assign(cam, { Th:VISTE.carrello.Th, Ph:VISTE.carrello.Ph, D:VISTE.carrello.D }); }
+}
+const el = renderer.domElement;
+let drag = null;
+el.addEventListener('contextmenu', e=>e.preventDefault());
+el.addEventListener('pointerdown', e=>{ drag = { b:e.button, x:e.clientX, y:e.clientY };
+  el.setPointerCapture(e.pointerId); });
+el.addEventListener('pointerup',   e=>{ drag = null; });
+el.addEventListener('pointermove', e=>{
+  if (!drag) return;
+  const dx = e.clientX-drag.x, dy = e.clientY-drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.b === 0){
+    if (cam.modo === 'bordo') return;
+    cam.Th -= dx*0.006; cam.Ph = Math.max(0.16, Math.min(2.05, cam.Ph - dy*0.005));
+  } else {
+    const r = new THREE.Vector3().setFromMatrixColumn(camera.matrix,0);
+    const u = new THREE.Vector3().setFromMatrixColumn(camera.matrix,1);
+    cam.Tgt.addScaledVector(r, -dx*cam.d*0.0011).addScaledVector(u, dy*cam.d*0.0011);
+    if (cam.modo !== 'totale') setVista('totale');
+  }
+});
+el.addEventListener('wheel', e=>{ e.preventDefault();
+  cam.D = Math.max(1.1, Math.min(46, cam.D * (1 + Math.sign(e.deltaY)*0.09))); }, { passive:false });
+
+/* ================================================================
+   9. INTERFACCIA
+   ================================================================ */
+const E = id => document.getElementById(id);
+
+/* pulsanti di piano */
+const floorbtns = E('floorbtns');
+const flBtn = PIANI.map((p,i)=>{
+  const b = document.createElement('button'); b.className = 'fl';
+  b.innerHTML = '<span class="led libero"></span><span class="nm">'+p.nome+
+    '</span><span class="q">'+p.st+' &middot; +'+p.y.toFixed(2)+' m</span>';
+  b.onclick = ()=>chiamataPiano(i);
+  floorbtns.appendChild(b); return b;
+});
+
+/* velocita' */
+[['x1','reale 0,10 m/s',1],['x2','',2],['x4','',4],['x8','',8]].forEach(([lab,tit,v])=>{
+  const b = document.createElement('button');
+  b.className = 'btn'+(v===4?' on':''); b.textContent = lab; b.title = tit||('velocita x'+v);
+  b.onclick = ()=>{ S.velFattore = v;
+    document.querySelectorAll('#speedbtns .btn').forEach(x=>x.classList.toggle('on', x===b)); };
+  E('speedbtns').appendChild(b);
+});
+
+/* inquadrature */
+[['totale','Totale'],['segui','Segui pedana'],['bordo','A bordo'],['carrello','Carrello']]
+.forEach(([v,lab])=>{
+  const b = document.createElement('button'); b.className='btn'+(v==='totale'?' on':'');
+  b.dataset.v = v; b.textContent = lab; b.onclick = ()=>setVista(v);
+  E('cambtns').appendChild(b);
+});
+
+/* manovra a uomo presente */
+function hold(btn, dir){
+  const giu = ()=>{ if (S.emergenza || S.pedanaChiusa) return;
+    S.target = null; S.pianoTarget = null; S.manuale = dir;
+    S.stato = dir>0 ? 'salita' : 'discesa';
+    S.rumore = Math.random()*0.4 - 0.2; S.pianoPartenza = S.piano_corrente;
+    pubTelemetria(); };
+  const su  = ()=>{ if (S.manuale){ S.manuale = 0; arrivo(); } };
+  btn.addEventListener('pointerdown', giu);
+  ['pointerup','pointerleave','pointercancel'].forEach(ev=>btn.addEventListener(ev, su));
+}
+hold(E('b-up'), +1); hold(E('b-dn'), -1);
+E('b-stop').onclick = ()=>{ S.target = null; S.manuale = 0; S.stato = 'idle';
+  S.assorbimento_motore = 0; pubTelemetria(); };
+E('b-emg').onclick = ()=>{
+  S.emergenza = !S.emergenza;
+  E('b-emg').classList.toggle('on', S.emergenza);
+  E('b-emg').textContent = S.emergenza ? 'RIARMA' : 'EMERGENZA';
+  btnEmg3D.material.emissive.setHex(S.emergenza ? 0x8a0000 : 0x000000);
+  if (S.emergenza){
+    S.target = null; S.manuale = 0; S.stato = 'fuori_servizio'; S.assorbimento_motore = 0;
+    pubEvento('emergenza','E01','Pulsante di emergenza premuto');
+  } else { S.stato = 'idle'; toast('ok','impianto riarmato','Servoscala nuovamente operativo.'); }
+  pubTelemetria();
+};
+
+/* passeggero e pedana */
+const sliderPeso = E('s-peso');
+function aggiornaPeso(){
+  const v = E('v-peso');
+  v.textContent = S.peso+' kg';
+  v.style.color = (S.aBordo && S.peso > LIMITE_PESO) ? 'var(--alarm)' : '';
+  aggiornaHUD();                       // riscontro immediato sulla telemetria
+}
+sliderPeso.addEventListener('input', ()=>{ S.peso = sliderPeso.valueAsNumber; aggiornaPeso(); });
+E('b-bordo').onclick = ()=>{ S.aBordo = !S.aBordo;
+  E('b-bordo').classList.toggle('on', S.aBordo);
+  E('b-bordo').textContent = S.aBordo ? 'a bordo' : 'a vuoto';
+  aggiornaPeso(); };
+E('b-fold').onclick = ()=>{
+  if (!S.pedanaChiusa && S.aBordo){ toast('warn','pedana bloccata','Non si chiude con il passeggero a bordo.'); return; }
+  if (S.stato==='salita'||S.stato==='discesa'){ toast('warn','pedana bloccata','Non si chiude durante la corsa.'); return; }
+  S.pedanaChiusa = !S.pedanaChiusa;
+  E('b-fold').textContent = S.pedanaChiusa ? 'apri pedana' : 'chiudi pedana';
+  E('b-fold').classList.toggle('on', S.pedanaChiusa);
+};
+
+/* barra inferiore */
+/* intestazione e selettore di flotta */
+E('h-id').textContent = CFG.id;
+E('h-liv').style.background = CFG.coloreCss;
+E('h-liv').style.color = CFG.coloreCss;
+E('h-sub').innerHTML = CFG.edificio + ' &mdash; vano scala a ' + NR +
+  (NR===1 ? ' rampa' : ' rampe') + ', ' + (NR+1) + ' piani serviti<br>' +
+  CFG.indirizzo + ' &middot; matricola ' + CFG.matricola + '<br>' +
+  'Servoscala <b>a piattaforma</b>: guida curvilinea a fune, 24&nbsp;V&nbsp;DC &middot; ' +
+  'livrea <b style="color:' + CFG.coloreCss + '">' + CFG.livrea + '</b>';
+document.title = CFG.id + ' · ' + CFG.edificio + ' — ' + NR + (NR===1?' rampa':' rampe');
+Object.values(IMPIANTI).forEach(im=>{
+  const b = document.createElement('button');
+  b.className = 'btn' + (im.id === CFG.id ? ' on' : '');
+  b.textContent = im.id;
+  b.title = im.edificio + ' — ' + im.rampe + (im.rampe===1?' rampa':' rampe');
+  b.style.borderLeft = '3px solid ' + im.coloreCss;
+  b.onclick = ()=>{ if (im.id !== CFG.id) location.href = im.file; };
+  E('fleetbtns').appendChild(b);
+});
+E('b-dash').onclick = ()=>{ location.href = 'assistenza_flotta.html'; };
+E('b-tele').onclick = ()=>mostraTele(!teleOn);
+addEventListener('keydown', e=>{
+  if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+  if (e.key === 't' || e.key === 'T') mostraTele(!teleOn);
+  else if (e.key === 'Escape' && teleOn) mostraTele(false);
+});
+
+E('b-auto').onclick = ()=>{ S.auto = !S.auto;
+  E('b-auto').classList.toggle('on', S.auto);
+  E('b-auto').innerHTML = S.auto ? '&#9632;&nbsp; Stop auto' : '&#9654;&nbsp; Auto-demo';
+  if (S.auto){ autoIdx = 0; autoT = 0; setVista('segui'); } };
+E('b-tour').onclick   = ()=>{ S.tour = !S.tour; E('b-tour').classList.toggle('on', S.tour);
+  if (S.tour) setVista('totale'); };
+E('b-walls').onclick  = ()=>{ muri.visible = !muri.visible;
+  E('b-walls').classList.toggle('on', muri.visible); };
+E('b-rail').onclick   = ()=>{ guida.visible = !guida.visible;
+  E('b-rail').classList.toggle('on', guida.visible); };
+E('b-reset').onclick  = ()=>{
+  Object.assign(S, { u:U_PIANO[0], target:null, pianoTarget:null, manuale:0, stato:'idle', piano_corrente:0,
+    livello_batteria:96.4, assorbimento_motore:0, contatore_corse:0, n_anomalie:0,
+    ultimoCodice:'—', usura:0, oreMotore:0, livelloManutenzione:'nessuno',
+    indicatore_stato:'operativo', emergenza:false, pedanaChiusa:false,
+    ultimaCorsa:performance.now()/1000, notificatoBenessere:false, ricaricaComandata:null,
+    ledStazioni:LIBERI(), chiamate:NESSUNA() });
+  E('b-emg').classList.remove('on'); E('b-emg').textContent = 'EMERGENZA';
+  E('b-fold').textContent = 'chiudi pedana'; E('b-fold').classList.remove('on');
+  btnEmg3D.material.emissive.setHex(0x000000);
+  logbody.innerHTML = ''; toast('ok','demo reinizializzata','Impianto riportato al piano terra.');
+};
+muri.visible = false;
+
+/* ------------------------------------------------------------- AUTO-DEMO */
+const SCRIPT = (NR === 1) ? [ {p:1,d:3.6},{p:0,d:3.8} ]
+             : (NR === 2) ? [ {p:2,d:3.6},{p:1,d:3.0},{p:0,d:3.6},{p:2,d:3.2},{p:0,d:4.0} ]
+             : [ {p:3,d:3.6},{p:1,d:3.2},{p:0,d:3.6},{p:2,d:3.2},{p:3,d:3.0},{p:0,d:4.2} ];
+let autoIdx = 0, autoT = 0;
+
+/* ================================================================
+   10. AGGIORNAMENTO HUD
+   ================================================================ */
+const BCLS = { idle:'b-idle', salita:'b-up', discesa:'b-down', fuori_servizio:'b-off' };
+function setDot(id, st){ const e = E(id); e.classList.toggle('bad', st==='bad');
+  e.classList.toggle('wait', st==='wait'); }
+let hudT = 0;
+function aggiornaHUD(){
+  const p = CURVA.getPointAt(S.u), t = CURVA.getTangentAt(S.u);
+  const quota = p.y - RH, rampa = rampaDaU(S.u);
+  const pend  = Math.abs(Math.asin(Math.max(-1,Math.min(1,t.y)))*180/Math.PI);
+  const inMoto = S.stato==='salita' || S.stato==='discesa';
+  if (S.aBordo && S.peso > LIMITE_PESO) S.assorbCorsa = 2.0 + S.peso*0.04 + S.rumore;
+
+  const inArrivo = inMoto && S.pianoTarget !== null && S.pianoTarget !== S.piano_corrente;
+  E('k-piano').textContent = 'P' + (inArrivo ? S.pianoTarget : S.piano_corrente);
+  E('k-piano-l').textContent = inArrivo ? 'in arrivo' : 'piano';
+  E('k-batt').innerHTML = S.livello_batteria.toFixed(0)+'<i>%</i>';
+  E('k-batt').style.color = S.livello_batteria < 20 ? 'var(--alarm)'
+    : S.livello_batteria < SOG.BATTERIA_BASSA ? 'var(--warn)' : '#fff';
+  E('k-amp').innerHTML = S.assorbimento_motore.toFixed(1)+'<i>A</i>';
+  E('k-amp').style.color = S.assorbimento_motore > 9 ? 'var(--warn)' : '#fff';
+
+  const pk = S.aBordo ? S.peso : 0, sovra = pk > LIMITE_PESO;
+  E('t-peso').textContent  = pk.toFixed(1)+' kg' + (S.aBordo ? '' : '  (a vuoto)');
+  E('t-peso').style.color  = sovra ? 'var(--alarm)' : '';
+  const pb = E('t-pesobar');
+  pb.style.width = Math.min(100, pk/TARGA.portata*100)+'%';
+  pb.style.background = sovra ? 'var(--alarm)' : pk > LIMITE_PESO*0.85 ? 'var(--warn)' : 'var(--ok)';
+  E('t-pesolim').style.left = (LIMITE_PESO/TARGA.portata*100)+'%';
+
+  const b = E('t-stato'); b.textContent = S.stato; b.className = 'badge '+BCLS[S.stato];
+  E('t-ind').textContent   = S.indicatore_stato;
+  E('t-ind').style.color   = S.indicatore_stato==='operativo' ? '' : 'var(--alarm)';
+  E('t-piano').textContent = inArrivo
+    ? ('P'+S.piano_corrente+' \u2192 P'+S.pianoTarget+'  (in transito)')
+    : (S.piano_corrente + ' \u2014 ' + PIANI[S.piano_corrente].nome.toLowerCase());
+  E('t-rampa').textContent = rampa ? ('rampa '+rampa+' / '+NR) : 'in sosta al piano';
+  E('t-quota').textContent = quota.toFixed(2)+' m';
+  E('t-pend').textContent  = pend.toFixed(1)+'° (max '+TARGA.pendMax+'°)';
+  E('t-progbar').style.width = (S.u*100).toFixed(1)+'%';
+  E('t-prog').textContent  = (S.u*LUNG).toFixed(1)+' / '+LUNG.toFixed(1)+' m';
+  E('t-vel').textContent   = (inMoto ? TARGA.velocita*S.velFattore : 0).toFixed(2)+' m/s'
+                             + (S.velFattore>1 ? '  (x'+S.velFattore+')' : '');
+
+  const soc = S.livello_batteria;
+  E('t-batt').textContent = soc.toFixed(1)+' %';
+  const bb = E('t-battbar'); bb.style.width = soc+'%';
+  bb.style.background = soc<20 ? 'var(--alarm)' : soc<SOG.BATTERIA_BASSA ? 'var(--warn)' : 'var(--ok)';
+  E('t-volt').textContent = (21.0 + soc/100*4.5).toFixed(1)+' V';
+  E('t-ric').textContent  = S.modalita_ricarica + (inMoto ? '' : ' · in carica');
+  E('t-amp').textContent  = S.assorbimento_motore.toFixed(2)+' A';
+  E('t-ampbar').style.width = Math.min(100, S.assorbimento_motore/12*100)+'%';
+  E('t-ampbar').style.background = S.assorbimento_motore>9 ? 'var(--warn)' : 'var(--acc)';
+  E('t-kw').textContent   = (TARGA.tensione*S.assorbimento_motore).toFixed(0)+' W';
+
+  setDot('s-coste', S.ostacoloCoste ? 'bad' : 'ok');
+  setDot('s-band',  inMoto ? (Math.abs(bandA.rotation.x) > 1.45 ? 'ok' : 'wait') : 'ok');
+  setDot('s-fc',    pianoDaU(S.u)!==null ? 'ok' : 'wait');
+  setDot('s-carico', (S.aBordo && S.peso>LIMITE_PESO) ? 'bad' : 'ok');
+  setDot('s-emg',   S.emergenza ? 'bad' : 'ok');
+  setDot('s-fune',  S.assorbimento_motore>10 ? 'wait' : 'ok');
+  E('t-anom').textContent = S.n_anomalie;
+  E('t-err').textContent  = S.ultimoCodice;
+
+  E('t-corse').textContent = S.contatore_corse + ' / ' + SOG.WARNING_CORSE + ' (warn)';
+  E('t-usura').textContent = S.usura.toFixed(1)+' / '+SOG.ALARM_USURA.toFixed(1);
+  const ub = E('t-usurabar'); ub.style.width = Math.min(100, S.usura/SOG.ALARM_USURA*100)+'%';
+  ub.style.background = S.usura>SOG.ALARM_USURA ? 'var(--alarm)'
+    : S.usura>SOG.ALARM_USURA*0.6 ? 'var(--warn)' : 'var(--ok)';
+  E('t-ore').textContent = S.oreMotore.toFixed(3)+' h';
+  const mb = E('t-manut'); mb.textContent = S.livelloManutenzione;
+  mb.className = 'badge ' + (S.livelloManutenzione==='alarm' ? 'b-off'
+    : S.livelloManutenzione==='warning' ? 'b-warn' : 'b-idle');
+
+  flBtn.forEach((b,i)=>{
+    b.classList.toggle('here', S.piano_corrente===i && !inMoto);
+    const l = b.querySelector('.led');
+    l.className = 'led ' + (S.ledStazioni[i]==='in_arrivo' ? 'arrivo'
+      : S.ledStazioni[i]==='occupato' ? 'occupato' : 'libero');
+  });
+  stazioni3D.forEach((s,i)=>{
+    const c = LED_COL[S.ledStazioni[i]] || LED_COL.libero;
+    s.ledMat.color.setHex(c); s.ledMat.emissive.setHex(c);
+    s.ledMat.emissiveIntensity = S.ledStazioni[i]==='in_arrivo'
+      ? 1.2 + Math.sin(performance.now()/120)*0.9 : 1.9;
+  });
+  aggiornaDisplay('P'+S.piano_corrente,
+    S.emergenza ? 'EMERGENZA' : inMoto ? (S.stato==='salita'?'SALITA':'DISCESA')
+      : S.indicatore_stato==='operativo' ? 'PRONTO' : 'MANUTENZ.',
+    S.emergenza ? '#ff5a68' : inMoto ? '#8ff0c0' : '#bfe0ff');
+}
+
+
+/* ================================================================
+   10-bis. TELEMETRIA A SCHERMO INTERO
+   Pannello sovrapposto alla scena (tasto T), apribile anche in una finestra
+   separata per il secondo schermo. Tre regole di progetto:
+     1. nulla cambia posizione: etichette fisse, solo i valori cambiano;
+     2. il messaggio piu' recente sta sempre in cima, nessuno scorrimento;
+     3. le colonne si allargano trascinando le maniglie fra di loro.
+   ================================================================ */
+const CSS_TELE = `
+.tw-root{position:fixed;inset:0;background:
+   radial-gradient(1000px 560px at 10% -8%, rgba(62,166,255,.10), transparent 60%), #0b0f16;
+  color:#e8eef7;font-family:Inter,-apple-system,"Segoe UI",Roboto,sans-serif;
+  padding:14px 16px;display:flex;flex-direction:column;gap:11px;overflow:hidden;z-index:60;
+  --dim:#8b9bb4;--dim2:#5f6e85;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --ok:#25d07a;--warn:#ffb020;--alarm:#ff4d5e;--acc:#3ea6ff;
+  --panel:rgba(18,25,37,.9);--stroke:rgba(255,255,255,.1)}
+.tw-root *{box-sizing:border-box}
+.tw-hd{display:flex;align-items:center;gap:12px;flex:none;flex-wrap:nowrap}
+.tw-hd .liv{width:13px;height:13px;border-radius:4px;flex:none;box-shadow:0 0 12px currentColor}
+.tw-hd h1{margin:0;font-size:clamp(14px,1.4vw,20px);font-weight:700;letter-spacing:-.02em;
+  font-family:var(--mono);flex:none}
+.tw-hd .sub{font-size:clamp(9.5px,.9vw,12.5px);color:var(--dim);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.tw-hd .sp{flex:1;min-width:8px}
+.tw-hd .clk{font-family:var(--mono);font-size:clamp(11px,1.1vw,15px);color:var(--dim);flex:none}
+.tw-hd button{font:inherit;font-size:clamp(9.5px,.85vw,11.5px);color:#e8eef7;cursor:pointer;
+  border-radius:8px;border:1px solid var(--stroke);background:rgba(255,255,255,.06);
+  padding:6px 11px;white-space:nowrap;flex:none}
+.tw-hd button:hover{background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.24)}
+.tw-badge{display:inline-block;padding:4px 12px;border-radius:999px;font-family:var(--mono);
+  font-size:clamp(9.5px,.95vw,12.5px);font-weight:750;letter-spacing:.07em;
+  text-transform:uppercase;flex:none}
+.tw-root .b-idle{background:rgba(139,155,180,.2);color:#b7c5da}
+.tw-root .b-up{background:rgba(37,208,122,.2);color:var(--ok)}
+.tw-root .b-down{background:rgba(62,166,255,.2);color:var(--acc)}
+.tw-root .b-off{background:rgba(255,77,94,.22);color:var(--alarm)}
+.tw-root .b-warn{background:rgba(255,176,32,.2);color:var(--warn)}
+.tw-kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;flex:none}
+.tw-kpi>div{background:var(--panel);border:1px solid var(--stroke);border-radius:14px;
+  padding:10px 15px;overflow:hidden}
+.tw-kpi b{display:block;font-family:var(--mono);font-size:clamp(24px,3.1vw,48px);
+  font-weight:750;letter-spacing:-.04em;line-height:1;font-variant-numeric:tabular-nums;
+  white-space:nowrap}
+.tw-kpi b i{font-style:normal;font-size:.4em;color:var(--dim);margin-left:3px;font-weight:600}
+.tw-kpi span{display:block;font-size:clamp(7.5px,.7vw,9.5px);letter-spacing:.15em;
+  text-transform:uppercase;color:var(--dim);margin-top:8px;font-weight:650;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tw-body{flex:1;display:grid;gap:0;min-height:0;min-width:0}
+.tw-col{display:flex;flex-direction:column;gap:11px;min-height:0;min-width:0}
+.tw-grip{cursor:col-resize;position:relative;flex:none;touch-action:none}
+.tw-grip::after{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:3px;height:36px;border-radius:2px;background:rgba(255,255,255,.16)}
+.tw-grip:hover::after{background:var(--acc);height:70px}
+.tw-card{background:var(--panel);border:1px solid var(--stroke);border-radius:14px;
+  padding:11px 14px;display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden}
+.tw-card h2{margin:0 0 8px;font-size:clamp(8px,.75vw,10px);letter-spacing:.15em;
+  text-transform:uppercase;color:#a6b6cd;font-weight:650;display:flex;align-items:center;gap:8px;
+  flex:none;white-space:nowrap}
+.tw-card h2::after{content:"";flex:1;height:1px;background:var(--stroke)}
+.tw-r{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  padding:3px 0;font-size:clamp(10px,.95vw,13px);flex:none}
+.tw-r .k{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tw-r .v{font-family:var(--mono);font-weight:650;color:#f4f8fd;text-align:right;
+  font-variant-numeric:tabular-nums;white-space:nowrap;flex:none}
+.tw-r .v.diff{color:var(--warn)}
+.tw-bar{height:8px;border-radius:5px;background:rgba(255,255,255,.09);overflow:hidden;
+  margin:5px 0 3px;position:relative;flex:none}
+.tw-bar i{display:block;height:100%;border-radius:5px;transition:width .2s linear}
+.tw-bar u{position:absolute;top:-2px;bottom:-2px;width:2px;background:rgba(255,255,255,.6)}
+.tw-dots{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin-top:2px;flex:none}
+.tw-dot{display:flex;align-items:center;gap:7px;font-size:clamp(9.5px,.9vw,12px);color:#b3c1d6}
+.tw-dot i{width:10px;height:10px;border-radius:50%;flex:none;box-shadow:0 0 10px currentColor;
+  background:var(--ok);color:var(--ok);transition:.15s}
+.tw-dot.bad i{background:var(--alarm);color:var(--alarm)}
+.tw-dot.wait i{background:var(--warn);color:var(--warn)}
+.tw-log{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  font-family:var(--mono);font-size:clamp(8px,.72vw,10.5px);line-height:1.48;
+  scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.2) transparent}
+.tw-log::-webkit-scrollbar{width:9px}
+.tw-log::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:5px}
+.tw-log::-webkit-scrollbar-track{background:transparent}
+.tw-nuovi{margin-left:auto;font-family:var(--mono);font-size:clamp(8px,.72vw,10px);
+  font-weight:700;letter-spacing:.02em;color:#06121e;background:var(--acc);
+  border:none;border-radius:999px;padding:3px 10px;cursor:pointer;white-space:nowrap;
+  text-transform:none;letter-spacing:0}
+.tw-nuovi:hover{background:#63bcff}
+.tw-fine{text-align:center;color:var(--dim2);padding:8px 0 2px;
+  font-size:clamp(8px,.7vw,10px);border-top:1px solid rgba(255,255,255,.06)}
+.tw-le{display:flex;gap:8px;padding:2.5px 0;border-bottom:1px solid rgba(255,255,255,.04);
+  max-height:5.2em;overflow:hidden}
+.tw-le .t{color:#5d6b82;flex:none}
+.tw-le .tp{flex:1;min-width:0;word-break:break-all;white-space:normal}
+.tw-le.tel .tp{color:#7fa8cc} .tw-le.cor .tp{color:var(--ok)}
+.tw-le.evt .tp{color:var(--alarm)} .tw-le.cmd .tp{color:#c79bff}
+.tw-le.not .tp{color:var(--warn)} .tw-le.puls .tp{color:#ffd9a0}
+.tw-pl{font-family:var(--mono);font-size:clamp(9px,.85vw,12px);line-height:1.7;
+  overflow:hidden;min-height:0;flex:none}
+.tw-pl>div{display:flex;gap:8px;height:1.7em;overflow:hidden}
+.tw-pl .pk{color:var(--dim);width:13.5em;flex:none}
+.tw-pl .pv{color:#8ff0c0;font-variant-numeric:tabular-nums;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.tw-graf{flex:none;height:82px}
+.tw-lg{display:flex;gap:14px;font-size:clamp(8.5px,.8vw,11px);color:var(--dim);
+  margin-top:4px;flex:none;flex-wrap:wrap}
+.tw-lg i{display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:5px;
+  vertical-align:2px}
+.tw-src{font-size:clamp(8.5px,.8vw,10.5px);color:var(--dim2);margin-top:7px;flex:none;
+  line-height:1.45}
+.tw-btn2{display:flex;gap:6px;margin-top:8px;flex:none;flex-wrap:wrap}
+.tw-btn2 button{font:inherit;font-size:clamp(9px,.82vw,11px);color:#e8eef7;cursor:pointer;
+  border-radius:7px;border:1px solid var(--stroke);background:rgba(255,255,255,.06);padding:5px 10px}
+.tw-btn2 button:hover{background:rgba(255,255,255,.14)}
+.tw-btn2 button.p{background:rgba(62,166,255,.18);border-color:rgba(62,166,255,.5);color:#bfe0ff}
+.tw-leg{position:absolute;inset:0;background:rgba(7,12,19,.955);z-index:8;
+  padding:20px 26px 26px;overflow-y:auto;display:none;
+  scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.2) transparent}
+.tw-leg.on{display:block}
+.tw-leg::-webkit-scrollbar{width:9px}
+.tw-leg::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:5px}
+.tw-leg .lh{display:flex;align-items:center;gap:12px;margin-bottom:4px}
+.tw-leg .lh b{font-size:clamp(13px,1.3vw,18px);letter-spacing:-.015em}
+.tw-leg .lh span{font-size:clamp(9.5px,.9vw,12px);color:var(--dim)}
+.tw-leg .lh button{margin-left:auto;font:inherit;font-size:clamp(9.5px,.85vw,11.5px);
+  color:#e8eef7;cursor:pointer;border-radius:8px;border:1px solid var(--stroke);
+  background:rgba(255,255,255,.07);padding:6px 12px}
+.tw-leg .lh button:hover{background:rgba(255,255,255,.16)}
+.tw-leg .cols{columns:2;column-gap:32px;margin-top:14px}
+@media(max-width:1000px){.tw-leg .cols{columns:1}}
+.tw-leg h3{font-size:clamp(8.5px,.78vw,10.5px);letter-spacing:.15em;text-transform:uppercase;
+  color:#a6b6cd;font-weight:650;margin:16px 0 7px;break-after:avoid;
+  border-bottom:1px solid var(--stroke);padding-bottom:5px}
+.tw-leg h3:first-child{margin-top:0}
+.tw-lr{display:flex;gap:11px;align-items:flex-start;padding:4px 0;break-inside:avoid;
+  font-size:clamp(9.5px,.88vw,12px);line-height:1.45}
+.tw-sw{width:26px;height:11px;border-radius:3px;flex:none;margin-top:3px}
+.tw-sw.d{width:11px;height:11px;border-radius:50%;box-shadow:0 0 8px currentColor}
+.tw-sw.p{width:26px;height:11px;border-radius:999px}
+.tw-lr .lk{font-family:var(--mono);color:#f4f8fd;flex:none}
+.tw-lr .lt{color:var(--dim);min-width:0}
+.tw-lr .lt b{color:#cfdae8;font-weight:600}
+`;
+
+/* ---- contenuti della legenda: swatch + significato ---- */
+const _sw = (c,cl)=>`<span class="tw-sw ${cl||''}" style="background:${c};color:${c}"></span>`;
+const _lr = (sw,k,t)=>`<div class="tw-lr">${sw}<span class="lk">${k}</span><span class="lt">${t}</span></div>`;
+
+const LEG_MQTT = [
+ ['#7fa8cc','telemetria','Flusso continuo dello stato del device, ogni 2,5 s. <b>QoS 0</b>: se un campione si perde, il successivo arriva subito.'],
+ ['#25d07a','corsa','Resoconto di una corsa conclusa: peso, assorbimento medio, piani. <b>QoS 1</b>: da qui nasce la stima di usura (R3).'],
+ ['#ff4d5e','evento','Diagnostica: <b>E01</b> emergenza, <b>E07</b> anomalia, <b>E12</b> sovraccarico. <b>QoS 1</b>.'],
+ ['#c79bff','comando','Manager &rarr; attuatore: modalit&agrave; di ricarica, indicatore di bordo, LED di stazione. <b>QoS 1</b>.'],
+ ['#ffb020','notifica','Manager &rarr; persona: benessere, manutenzione programmata o urgente. <b>QoS 1</b>.'],
+ ['#ffd9a0','pulsante','Sensore &rarr; manager: qualcuno ha premuto la chiamata a un piano. <b>QoS 1</b>.']
+].map(([c,k,t])=>_lr(_sw(c),k,t)).join('');
+
+const LEG_STATO = [
+ ['rgba(139,155,180,.55)','idle','Fermo al piano, in carica. &Egrave; lo stato in cui trascorre la maggior parte del tempo.'],
+ ['#25d07a','salita','In corsa verso un piano pi&ugrave; alto: l&rsquo;assorbimento del motore &egrave; al massimo.'],
+ ['#3ea6ff','discesa','In corsa verso il basso: assorbe circa il 20% in meno che in salita.'],
+ ['#ff4d5e','fuori_servizio','Emergenza inserita. Nessuna manovra possibile finch&eacute; non si riarma.']
+].map(([c,k,t])=>_lr(_sw(c,'p'),k,t)).join('');
+
+const LEG_DOT = [
+ ['#25d07a','verde','Il dispositivo di sicurezza &egrave; a posto e non sta intervenendo.'],
+ ['#ffb020','ambra','Transitorio o al limite: bandelle a met&agrave; corsa, fine corsa non ancora raggiunto, tiro della fune elevato.'],
+ ['#ff4d5e','rosso','Intervenuto: costa della pedana impegnata, carico oltre <span style="font-family:var(--mono)">LIMITE_PESO</span>, emergenza premuta.']
+].map(([c,k,t])=>_lr(_sw(c,'d'),k,t)).join('');
+
+const LEG_BAR = [
+ ['#25d07a','verde','Dentro i limiti di normale funzionamento.'],
+ ['#ffb020','ambra','Attenzione: batteria sotto <span style="font-family:var(--mono)">SOGLIA_BATTERIA_BASSA</span>, carico oltre l&rsquo;85% del limite, usura oltre il 60% della soglia.'],
+ ['#ff4d5e','rosso','Oltre soglia: batteria sotto il 20%, carico oltre il limite, usura oltre <span style="font-family:var(--mono)">ALARM_USURA</span>.'],
+ ['rgba(255,255,255,.7)','trattino bianco','Sulla barra del carico segna <span style="font-family:var(--mono)">LIMITE_PESO</span>: a destra del trattino la corsa viene rifiutata con <b>E12</b>.']
+].map(([c,k,t])=>_lr(_sw(c),k,t)).join('');
+
+const LEG_SOG = [
+ ['#f4f8fd','valore bianco','Soglia uguale a quella con cui la demo &egrave; stata scritta.'],
+ ['#ffb020','valore ambra','Soglia <b>diversa</b> dal predefinito: l&rsquo;hai caricata tu con <i>Leggi da comune.py</i>. La lettura vive solo in memoria, il progetto non viene toccato.'],
+ ['rgba(139,155,180,.55)','nessuno','Nessuna soglia di manutenzione superata.'],
+ ['#ffb020','warning','Regola <b>R5</b>: corse oltre <span style="font-family:var(--mono)">WARNING_CORSE</span> o anomalie oltre <span style="font-family:var(--mono)">WARNING_ANOMALIE</span>. Solo una notifica.'],
+ ['#ff4d5e','alarm','Regola <b>R6</b>: usura oltre <span style="font-family:var(--mono)">ALARM_USURA</span> o anomalie oltre <span style="font-family:var(--mono)">ALARM_ANOMALIE</span>. Notifica <b>e</b> indicatore di bordo su <span style="font-family:var(--mono)">manutenzione_necessaria</span>.']
+].map(([c,k,t],i)=>_lr(_sw(c, i<2?'':'p'),k,t)).join('');
+
+const LEG_GRAF = [
+ ['#3ea6ff','linea azzurra','Assorbimento del motore, scala 0&ndash;12 A. Sale in rampa e scende sui pianerottoli, perch&eacute; dipende dalla pendenza del tratto.'],
+ ['#25d07a','linea verde','Livello della batteria, scala 0&ndash;100%. Cala durante le corse, risale in sosta con la pendenza data dalla modalit&agrave; di ricarica.']
+].map(([c,k,t])=>_lr(_sw(c),k,t)).join('');
+
+const CAMPI_TEL = ['device_id','edificio','stato','piano_corrente','livello_batteria',
+  'assorbimento_motore','contatore_corse','modalita_ricarica','indicatore_stato','timestamp'];
+
+/* corrispondenza fra i nomi in comune.py e le chiavi usate qui */
+const MAPPA_SOGLIE = [
+  ['SOGLIA_INATTIVITA_S',   'INATTIVITA_S',    's'],
+  ['SOGLIA_BATTERIA_BASSA', 'BATTERIA_BASSA',  '%'],
+  ['WARNING_CORSE',         'WARNING_CORSE',   'corse'],
+  ['WARNING_ANOMALIE',      'WARNING_ANOMALIE','anomalie'],
+  ['ALARM_USURA',           'ALARM_USURA',     ''],
+  ['ALARM_ANOMALIE',        'ALARM_ANOMALIE',  'anomalie']
+];
+
+function markupTele(conPulsanti){
+  const dot = (k,lab)=>`<div class="tw-dot" data-d="${k}"><i></i>${lab}</div>`;
+  const sog = MAPPA_SOGLIE.map(([py,js,u])=>
+    `<div class="tw-r"><span class="k">${py}</span>
+       <span class="v" data-s="${js}">&mdash;</span></div>`).join('');
+  return `<div class="tw-root">
+  <div class="tw-hd">
+    <span class="liv" data-k="liv"></span>
+    <h1 data-k="id">SV01</h1>
+    <span class="sub" data-k="sub"></span>
+    <span class="sp"></span>
+    <span class="tw-badge b-idle" data-k="stato">idle</span>
+    <span class="clk" data-k="clock">--:--:--</span>
+    <button data-a="legenda">Legenda colori</button>
+    ${conPulsanti ? `<button data-a="win">Finestra separata</button>
+      <button data-a="chiudi">Chiudi (T)</button>` : ''}
+  </div>
+
+  <div class="tw-kpi">
+    <div><b data-k="k1">P0</b><span data-k="k1l">piano corrente</span></div>
+    <div><b data-k="k2">100<i>%</i></b><span>livello batteria</span></div>
+    <div><b data-k="k3">0.0<i>A</i></b><span>assorbimento motore</span></div>
+    <div><b data-k="k4">0</b><span>contatore corse</span></div>
+  </div>
+
+  <div class="tw-body">
+    <div class="tw-col">
+      <div class="tw-card">
+        <h2>Posizione</h2>
+        <div class="tw-r"><span class="k">rampa</span><span class="v" data-k="rampa">&mdash;</span></div>
+        <div class="tw-r"><span class="k">quota</span><span class="v" data-k="quota">0.00 m</span></div>
+        <div class="tw-r"><span class="k">pendenza tratto</span><span class="v" data-k="pend">0.0&deg;</span></div>
+        <div class="tw-r"><span class="k">velocit&agrave;</span><span class="v" data-k="vel">0.00 m/s</span></div>
+        <div class="tw-bar"><i data-k="bprog" style="width:0%;background:var(--acc)"></i></div>
+        <div class="tw-r"><span class="k">percorso guida</span><span class="v" data-k="prog">0.0 / 0.0 m</span></div>
+      </div>
+      <div class="tw-card">
+        <h2>Carico e batteria</h2>
+        <div class="tw-r"><span class="k">peso_kg</span><span class="v" data-k="peso">0.0 kg</span></div>
+        <div class="tw-bar"><i data-k="bpeso" style="width:0%;background:var(--ok)"></i><u data-k="upeso"></u></div>
+        <div class="tw-r"><span class="k">livello_batteria</span><span class="v" data-k="batt">100.0 %</span></div>
+        <div class="tw-bar"><i data-k="bbatt" style="width:100%;background:var(--ok)"></i></div>
+        <div class="tw-r"><span class="k">tensione pacco</span><span class="v" data-k="volt">25.2 V</span></div>
+        <div class="tw-r"><span class="k">modalita_ricarica</span><span class="v" data-k="ric">lenta</span></div>
+        <div class="tw-r"><span class="k">potenza istantanea</span><span class="v" data-k="watt">0 W</span></div>
+      </div>
+      <div class="tw-card" style="flex:1">
+        <h2>Soglie attive &middot; solo lettura</h2>
+        ${sog}
+        <div class="tw-r"><span class="k">LIMITE_PESO</span><span class="v" data-s="LIMITE_PESO">&mdash;</span></div>
+        ${conPulsanti ? `<div class="tw-btn2">
+          <button class="p" data-a="leggi">Leggi da comune.py</button>
+          <button data-a="ripristina">Ripristina</button></div>` : ''}
+        <div class="tw-src" data-k="src"></div>
+      </div>
+    </div>
+
+    <div class="tw-grip" data-g="0"></div>
+
+    <div class="tw-col">
+      <div class="tw-card">
+        <h2>Ultimo payload &middot; servoscala/&lt;id&gt;/telemetria</h2>
+        <div class="tw-pl" data-k="payload"></div>
+      </div>
+      <div class="tw-card">
+        <h2>Sicurezze e allarmi</h2>
+        <div class="tw-dots">
+          ${dot('coste','coste pedana')}${dot('band','bandelle')}
+          ${dot('fc','fine corsa')}${dot('carico','carico')}
+          ${dot('emg','emergenza')}${dot('fune','tiro fune')}
+        </div>
+        <div class="tw-r" style="margin-top:6px"><span class="k">n_anomalie</span><span class="v" data-k="anom">0</span></div>
+        <div class="tw-r"><span class="k">ultimo codice</span><span class="v" data-k="err">&mdash;</span></div>
+      </div>
+      <div class="tw-card" style="flex:1">
+        <h2>Manutenzione predittiva</h2>
+        <div class="tw-r"><span class="k">corse / soglia warning</span><span class="v" data-k="corse">0 / 8</span></div>
+        <div class="tw-r"><span class="k">usura / soglia alarm</span><span class="v" data-k="usura">0.0 / 45.0</span></div>
+        <div class="tw-bar"><i data-k="busura" style="width:0%;background:var(--ok)"></i></div>
+        <div class="tw-r"><span class="k">livello</span><span class="v"><span class="tw-badge b-idle" data-k="manut">nessuno</span></span></div>
+        <div class="tw-r"><span class="k">ore motore</span><span class="v" data-k="ore">0.000 h</span></div>
+      </div>
+    </div>
+
+    <div class="tw-grip" data-g="1"></div>
+
+    <div class="tw-col">
+      <div class="tw-card" style="flex:1">
+        <h2>Traffico MQTT &middot; il pi&ugrave; recente in alto
+          <button class="tw-nuovi" data-k="nuovi" style="display:none"></button></h2>
+        <div class="tw-log" data-k="log"></div>
+      </div>
+      <div class="tw-card">
+        <h2>Ultimi 60 secondi</h2>
+        <div class="tw-graf" data-k="graf"></div>
+        <div class="tw-lg"><span><i style="background:#3ea6ff"></i>assorbimento (0&ndash;12 A)</span>
+          <span><i style="background:#25d07a"></i>batteria (0&ndash;100%)</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tw-leg" data-k="legenda">
+    <div class="lh"><b>Legenda dei colori</b>
+      <span>a cosa corrisponde ogni colore in questa pagina</span>
+      <button data-a="chiudi-leg">Chiudi</button></div>
+    <div class="cols">
+      <h3>Traffico MQTT &mdash; colore della riga</h3>
+      ${LEG_MQTT}
+      <h3>Badge di stato (campo <span style="font-family:var(--mono)">stato</span>)</h3>
+      ${LEG_STATO}
+      <h3>Pallini delle sicurezze</h3>
+      ${LEG_DOT}
+      <h3>Barre di livello</h3>
+      ${LEG_BAR}
+      <h3>Soglie e manutenzione</h3>
+      ${LEG_SOG}
+      <h3>Grafico degli ultimi 60 secondi</h3>
+      ${LEG_GRAF}
+    </div>
+  </div>
+</div>`;
+}
+
+/* --- larghezza delle colonne, regolabile trascinando le maniglie --- */
+const COLW = [1.0, 1.05, 1.45];
+function applicaColonne(root){
+  const b = root && root.querySelector('.tw-body');
+  if (b) b.style.gridTemplateColumns =
+    COLW[0]+'fr 11px '+COLW[1]+'fr 11px '+COLW[2]+'fr';
+}
+function attivaLegenda(root){
+  if (!root) return;
+  const leg = root.querySelector('[data-k="legenda"]');
+  const apri = root.querySelector('[data-a="legenda"]');
+  const chiudi = root.querySelector('[data-a="chiudi-leg"]');
+  if (!leg) return;
+  if (apri) apri.onclick = ()=>leg.classList.toggle('on');
+  if (chiudi) chiudi.onclick = ()=>leg.classList.remove('on');
+}
+function attivaManiglie(root){
+  const body = root.querySelector('.tw-body');
+  if (!body) return;
+  const grips = root.querySelectorAll('.tw-grip');
+  for (let i=0;i<grips.length;i++){
+    const g = grips[i], idx = +g.dataset.g;
+    g.addEventListener('pointerdown', e=>{
+      e.preventDefault();
+      const w = body.clientWidth || 1000, x0 = e.clientX;
+      const a0 = COLW[idx], b0 = COLW[idx+1], tot = COLW[0]+COLW[1]+COLW[2];
+      const mv = ev=>{
+        const d = (ev.clientX - x0) / w * tot;
+        COLW[idx]   = Math.max(0.4, Math.min(a0+b0-0.4, a0 + d));
+        COLW[idx+1] = a0 + b0 - COLW[idx];
+        applicaColonne(teleRoot);
+        if (teleWin && !teleWin.closed)
+          applicaColonne(teleWin.document.querySelector('.tw-root'));
+      };
+      const up = ()=>{ window.removeEventListener('pointermove', mv);
+                       window.removeEventListener('pointerup', up); };
+      window.addEventListener('pointermove', mv);
+      window.addEventListener('pointerup', up);
+    });
+  }
+}
+
+/* --- lettura delle soglie dal progetto: SOLO LETTURA, nessuna scrittura --- */
+function applicaTestoSoglie(testi){
+  let trovate = [], nomi = [];
+  testi.forEach(({nome, testo})=>{
+    let n = 0;
+    MAPPA_SOGLIE.forEach(([py, js])=>{
+      const m = new RegExp('^[ \\t]*' + py + '[ \\t]*=[ \\t]*(-?[0-9]+(?:\\.[0-9]+)?)', 'm').exec(testo);
+      if (m){ SOG[js] = parseFloat(m[1]); n++; if (!trovate.includes(py)) trovate.push(py); }
+    });
+    const ml = /^[ \t]*LIMITE_PESO[ \t]*=[ \t]*(-?[0-9]+(?:\.[0-9]+)?)/m.exec(testo);
+    if (ml){ LIMITE_PESO = parseFloat(ml[1]); n++; if (!trovate.includes('LIMITE_PESO')) trovate.push('LIMITE_PESO'); }
+    if (n) nomi.push(nome);
+  });
+  if (!trovate.length){
+    toast('warn','nessuna soglia riconosciuta',
+      'Nei file scelti non ho trovato righe come <b>WARNING_CORSE = 8</b>. ' +
+      'Seleziona <b>comune.py</b> e, se vuoi anche il limite di peso, <b>servoscala.py</b>.');
+    return;
+  }
+  origineSoglie = 'letti da ' + nomi.join(' e ') + ' alle ' + ora() +
+                  ' · ' + trovate.length + ' valori su ' + (MAPPA_SOGLIE.length+1);
+  toast('ok','soglie caricate',
+    trovate.length + ' valori letti da ' + nomi.join(' e ') +
+    '. Il progetto non è stato modificato: la lettura vive solo in memoria.');
+  pubTelemetria();
+}
+function ripristinaSoglie(){
+  Object.keys(SOG_DEF).forEach(k=> SOG[k] = SOG_DEF[k]);
+  LIMITE_PESO = LIMITE_PESO_DEF;
+  origineSoglie = 'valori predefiniti, allineati a comune.py';
+  toast('ok','soglie ripristinate','Tornate ai valori con cui la demo è stata scritta.');
+}
+
+/* storico breve per il grafico: campionato due volte al secondo */
+const STORIA = []; let storiaT = 0;
+function svgStoria(w, h){
+  if (STORIA.length < 2) return '';
+  const n = 120, d = STORIA.slice(-n);
+  const px = i => (i/(n-1))*w;
+  const pa = d.map((s,i)=>`${px(i).toFixed(1)},${(h - h*Math.min(1,s.a/12)).toFixed(1)}`).join(' ');
+  const pb = d.map((s,i)=>`${px(i).toFixed(1)},${(h - h*s.b/100).toFixed(1)}`).join(' ');
+  let g = '';
+  for (let k=1;k<4;k++) g += `<line x1="0" y1="${(h*k/4).toFixed(1)}" x2="${w}" y2="${(h*k/4).toFixed(1)}"
+      stroke="rgba(255,255,255,.06)"/>`;
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:100%">
+    ${g}<polyline points="${pb}" fill="none" stroke="#25d07a" stroke-width="1.6" opacity=".85"/>
+    <polyline points="${pa}" fill="none" stroke="#3ea6ff" stroke-width="2"/></svg>`;
+}
+
+/* Registro scorribile. Finche' sei in cima le righe nuove entrano subito; appena
+   scorri verso il basso per leggere i messaggi vecchi il riquadro si CONGELA, cosi'
+   il testo che stai leggendo non si sposta di un pixel. I messaggi che arrivano nel
+   frattempo vengono contati nel pulsante "n nuovi": premilo (o riporta la barra in
+   cima) e il registro riparte. */
+function aggiornaLog(lg, badge){
+  if (!lg) return;
+  if (lg._sync === undefined){
+    lg._sync = 0;
+    lg.addEventListener('scroll', ()=>{ if (lg.scrollTop <= 6) lg._sync = 0; });
+    if (badge) badge.onclick = ()=>{ lg.scrollTop = 0; lg._sync = 0; };
+  }
+  const inCima = lg.scrollTop <= 6;
+  if (!inCima){
+    const nuovi = MSGS.filter(m=>m.n > lg._sync).length;
+    if (badge){
+      const txt = nuovi ? ('\u2191 ' + nuovi + (nuovi===1?' nuovo':' nuovi')) : '\u2191 in cima';
+      if (badge.textContent !== txt) badge.textContent = txt;
+      badge.style.display = '';
+    }
+    return;                                  // congelato: nessun rirendering
+  }
+  if (badge && badge.style.display !== 'none') badge.style.display = 'none';
+  const ultimo = MSGS.length ? MSGS[0].n : 0;
+  if (ultimo === lg._sync) return;
+  lg._sync = ultimo;
+  lg.innerHTML = MSGS.map(m=>
+    '<div class="tw-le '+m.cls+'"><span class="t">'+m.t+'</span><span class="tp">'+
+    m.topic+' '+m.j+'</span></div>').join('') +
+    '<div class="tw-fine">' + MSGS.length + ' messaggi in memoria (i pi\u00f9 vecchi vengono scartati oltre 400)</div>';
+}
+
+function riempiTele(root){
+  if (!root) return;
+  const Q = k => root.querySelector('[data-k="'+k+'"]');
+  const set = (k,v)=>{ const e=Q(k); if (e && e.textContent !== v) e.textContent = v; };
+  const p = CURVA.getPointAt(S.u), t = CURVA.getTangentAt(S.u);
+  const rampa = rampaDaU(S.u), inMoto = S.stato==='salita' || S.stato==='discesa';
+  const inArrivo = inMoto && S.pianoTarget !== null && S.pianoTarget !== S.piano_corrente;
+
+  const liv = Q('liv'); if (liv){ liv.style.background = CFG.coloreCss; liv.style.color = CFG.coloreCss; }
+  set('id', CFG.id);
+  set('sub', '· ' + CFG.edificio + ' · ' + NR + (NR===1?' rampa':' rampe') +
+             ' · ' + (NR+1) + ' piani · piattaforma a fune');
+  const b = Q('stato'); if (b){ b.textContent = S.stato; b.className = 'tw-badge ' + BCLS[S.stato]; }
+  set('clock', ora());
+
+  set('k1', 'P' + (inArrivo ? S.pianoTarget : S.piano_corrente));
+  set('k1l', inArrivo ? 'piano di destinazione' : 'piano corrente');
+  const k2 = Q('k2');
+  if (k2){ k2.innerHTML = S.livello_batteria.toFixed(0)+'<i>%</i>';
+    k2.style.color = S.livello_batteria < 20 ? 'var(--alarm)'
+      : S.livello_batteria < SOG.BATTERIA_BASSA ? 'var(--warn)' : '#fff'; }
+  const k3 = Q('k3');
+  if (k3){ k3.innerHTML = S.assorbimento_motore.toFixed(1)+'<i>A</i>';
+    k3.style.color = S.assorbimento_motore > 9 ? 'var(--warn)' : '#fff'; }
+  set('k4', String(S.contatore_corse));
+
+  set('rampa', rampa ? ('rampa ' + rampa + ' / ' + NR) : 'in sosta al piano');
+  set('quota', (p.y - RH).toFixed(2) + ' m');
+  set('pend', Math.abs(Math.asin(cl(t.y))*180/Math.PI).toFixed(1) + '° (max ' + TARGA.pendMax + '°)');
+  set('vel', (inMoto ? TARGA.velocita*S.velFattore : 0).toFixed(2) + ' m/s' +
+             (S.velFattore>1 ? '  ×' + S.velFattore : ''));
+  const bp = Q('bprog'); if (bp) bp.style.width = (S.u*100).toFixed(1)+'%';
+  set('prog', (S.u*LUNG).toFixed(1) + ' / ' + LUNG.toFixed(1) + ' m');
+
+  const pk = S.aBordo ? S.peso : 0, sovra = pk > LIMITE_PESO;
+  set('peso', pk.toFixed(1) + ' kg' + (S.aBordo ? '' : '  (a vuoto)'));
+  const bpe = Q('bpeso');
+  if (bpe){ bpe.style.width = Math.min(100, pk/TARGA.portata*100)+'%';
+    bpe.style.background = sovra ? 'var(--alarm)' : pk > LIMITE_PESO*0.85 ? 'var(--warn)' : 'var(--ok)'; }
+  const up = Q('upeso'); if (up) up.style.left = (LIMITE_PESO/TARGA.portata*100)+'%';
+  set('batt', S.livello_batteria.toFixed(1) + ' %');
+  const bb = Q('bbatt');
+  if (bb){ bb.style.width = S.livello_batteria+'%';
+    bb.style.background = S.livello_batteria<20 ? 'var(--alarm)'
+      : S.livello_batteria<SOG.BATTERIA_BASSA ? 'var(--warn)' : 'var(--ok)'; }
+  set('volt', (21.0 + S.livello_batteria/100*4.5).toFixed(1) + ' V');
+  set('ric', S.modalita_ricarica + (inMoto ? '' : ' · in carica'));
+  set('watt', (TARGA.tensione*S.assorbimento_motore).toFixed(0) + ' W');
+
+  /* soglie attive, con evidenza sui valori diversi da quelli predefiniti */
+  const setS = (k, v, diff)=>{
+    const e = root.querySelector('[data-s="'+k+'"]');
+    if (!e) return;
+    if (e.textContent !== v) e.textContent = v;
+    const c = 'v' + (diff ? ' diff' : '');
+    if (e.className !== c) e.className = c;
+  };
+  MAPPA_SOGLIE.forEach(([py, js, u])=>
+    setS(js, SOG[js] + (u ? ' ' + u : ''), SOG[js] !== SOG_DEF[js]));
+  setS('LIMITE_PESO', LIMITE_PESO.toFixed(1) + ' kg', LIMITE_PESO !== LIMITE_PESO_DEF);
+  set('src', origineSoglie);
+
+  /* payload: le chiavi sono fisse, cambiano solo i valori */
+  const pl = Q('payload'), ult = ultimoPayload['telemetria'];
+  if (pl && ult){
+    if (pl.children.length !== CAMPI_TEL.length)
+      pl.innerHTML = CAMPI_TEL.map(c=>'<div><span class="pk">'+c+
+        '</span><span class="pv" data-p="'+c+'"></span></div>').join('');
+    CAMPI_TEL.forEach(c=>{
+      const e = pl.querySelector('[data-p="'+c+'"]');
+      const v = ult[c] === undefined ? '—' : String(ult[c]);
+      if (e && e.textContent !== v) e.textContent = v;
+    });
+  }
+
+  const dot = (k, st)=>{ const e = root.querySelector('[data-d="'+k+'"]');
+    if (e){ const c = 'tw-dot' + (st==='bad' ? ' bad' : st==='wait' ? ' wait' : '');
+            if (e.className !== c) e.className = c; } };
+  dot('coste', S.ostacoloCoste ? 'bad' : 'ok');
+  dot('band',  inMoto ? (Math.abs(bandA.rotation.x) > 1.45 ? 'ok' : 'wait') : 'ok');
+  dot('fc',    pianoDaU(S.u) !== null ? 'ok' : 'wait');
+  dot('carico', sovra ? 'bad' : 'ok');
+  dot('emg',   S.emergenza ? 'bad' : 'ok');
+  dot('fune',  S.assorbimento_motore > 10 ? 'wait' : 'ok');
+  set('anom', String(S.n_anomalie));
+  set('err', S.ultimoCodice);
+
+  set('corse', S.contatore_corse + ' / ' + SOG.WARNING_CORSE);
+  set('usura', S.usura.toFixed(1) + ' / ' + SOG.ALARM_USURA.toFixed(1));
+  const bu = Q('busura');
+  if (bu){ bu.style.width = Math.min(100, S.usura/SOG.ALARM_USURA*100)+'%';
+    bu.style.background = S.usura>SOG.ALARM_USURA ? 'var(--alarm)'
+      : S.usura>SOG.ALARM_USURA*0.6 ? 'var(--warn)' : 'var(--ok)'; }
+  const mb = Q('manut');
+  if (mb){ mb.textContent = S.livelloManutenzione;
+    mb.className = 'tw-badge ' + (S.livelloManutenzione==='alarm' ? 'b-off'
+      : S.livelloManutenzione==='warning' ? 'b-warn' : 'b-idle'); }
+  set('ore', S.oreMotore.toFixed(3) + ' h');
+
+  aggiornaLog(Q('log'), Q('nuovi'));
+  const gr = Q('graf');
+  if (gr) gr.innerHTML = svgStoria(300, 82);
+}
+
+/* --- attivazione --- */
+let teleRoot = null, teleWin = null, teleOn = false, inputSoglie = null;
+{
+  const st = document.createElement('style'); st.textContent = CSS_TELE; document.head.appendChild(st);
+  const host = document.createElement('div');
+  host.innerHTML = markupTele(true);
+  teleRoot = host.firstElementChild;
+  if (teleRoot){
+    teleRoot.style.display = 'none';
+    document.body.appendChild(teleRoot);
+    applicaColonne(teleRoot); attivaManiglie(teleRoot); attivaLegenda(teleRoot);
+    const A = a => teleRoot.querySelector('[data-a="'+a+'"]');
+    if (A('chiudi'))     A('chiudi').onclick     = ()=>mostraTele(false);
+    if (A('win'))        A('win').onclick        = ()=>apriFinestraTele();
+    if (A('leggi'))      A('leggi').onclick      = ()=>inputSoglie && inputSoglie.click();
+    if (A('ripristina')) A('ripristina').onclick = ()=>ripristinaSoglie();
+  }
+  inputSoglie = document.createElement('input');
+  inputSoglie.type = 'file'; inputSoglie.accept = '.py,.txt';
+  inputSoglie.multiple = true; inputSoglie.style.display = 'none';
+  document.body.appendChild(inputSoglie);
+  inputSoglie.onchange = e=>{
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    let letti = [];
+    let rimasti = files.length;
+    files.forEach(f=>{
+      const r = new FileReader();
+      r.onload = ()=>{ letti.push({ nome:f.name, testo:String(r.result) });
+        if (--rimasti === 0) applicaTestoSoglie(letti); };
+      r.onerror = ()=>{ if (--rimasti === 0) applicaTestoSoglie(letti); };
+      r.readAsText(f);
+    });
+    e.target.value = '';
+  };
+}
+function mostraTele(v){
+  teleOn = v;
+  if (teleRoot) teleRoot.style.display = v ? 'flex' : 'none';
+  const b = document.getElementById('b-tele');
+  if (b) b.classList.toggle('on', v);
+  if (v) riempiTele(teleRoot);
+}
+function apriFinestraTele(){
+  teleWin = window.open('', 'telemetria_' + CFG.id,
+    'width=1500,height=900,menubar=no,toolbar=no,location=no');
+  if (!teleWin){ toast('warn','finestra bloccata',
+    'Il browser ha bloccato la finestra: consenti i pop-up per questa pagina.'); return; }
+  teleWin.document.open();
+  teleWin.document.write('<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">' +
+    '<title>Telemetria ' + CFG.id + ' · ' + CFG.edificio + '</title><style>' +
+    'body{margin:0;background:#0b0f16}' + CSS_TELE +
+    '</style></head><body>' + markupTele(false) + '</body></html>');
+  teleWin.document.close();
+  const rw = teleWin.document.querySelector('.tw-root');
+  applicaColonne(rw); attivaLegenda(rw);
+  mostraTele(false);
+}
+
+/* ================================================================
+   11. POSA SULLA GUIDA
+   Il carrello segue l'inclinazione della guida, la pedana resta
+   SEMPRE in bolla: e' l'auto-livellamento dell'impianto reale.
+   ================================================================ */
+let yawPrev = null;
+const cl = (v)=>Math.max(-1, Math.min(1, v));
+function aggiornaPosa(){
+  const p = CURVA.getPointAt(S.u), t = CURVA.getTangentAt(S.u);
+  mover.position.copy(p);
+  let yaw = Math.atan2(t.x, t.z);
+  if (yawPrev === null) yawPrev = yaw;
+  while (yaw - yawPrev >  Math.PI) yaw -= 2*Math.PI;
+  while (yaw - yawPrev < -Math.PI) yaw += 2*Math.PI;
+  yawPrev = yaw;
+  mover.rotation.y = yaw;
+  carrello.rotation.x = -Math.asin(cl(t.y));
+  pendino.rotation.x = 0;
+}
+
+/* ================================================================
+   12. CICLO PRINCIPALE
+   ================================================================ */
+S.pausa = 0;
+const clock = new THREE.Clock();
+const vTmp = new THREE.Vector3(), vTmp2 = new THREE.Vector3();
+let hudAcc = 0, ostAcc = 0, teleAcc = 0;
+
+function anima(){
+  requestAnimationFrame(anima);
+  let dt = Math.min(0.05, clock.getDelta());
+  if (window.FILM_PAUSA) dt = 0;          // fermo immagine del documentario
+
+  /* il carico a bordo entra in tempo reale nel modello: assorbimento del motore,
+     usura accumulata e soglia di sovraccarico si aggiornano mentre muovi lo slider */
+  const sv = sliderPeso.valueAsNumber;
+  if (!isNaN(sv) && sv !== S.peso){ S.peso = sv; aggiornaPeso(); }
+  S.assorbCorsa = 2.0 + (S.aBordo ? S.peso : 0)*0.04 + S.rumore;
+  if (torsoRef){ const f = 0.78 + S.peso/250*0.62; torsoRef.scale.set(f, 1, f); }
+
+  let inMoto = !S.emergenza && (S.target !== null || S.manuale !== 0);
+  if (S.aBordo && S.peso > LIMITE_PESO){
+    if (inMoto && !S.sovrNotif){
+      S.sovrNotif = true;
+      pubEvento('sovraccarico','E12','Peso '+S.peso.toFixed(1)+' kg oltre il limite di '+
+        LIMITE_PESO.toFixed(1)+' kg: corsa interrotta');
+      S.target = null; S.pianoTarget = null; S.manuale = 0;
+      S.stato = 'idle'; S.assorbimento_motore = 0; inMoto = false;
+    }
+  } else S.sovrNotif = false;
+
+  /* --- costa di sicurezza: ostacolo occasionale sotto la pedana --- */
+  if (S.pausa > 0){ S.pausa -= dt; if (S.pausa <= 0) S.ostacoloCoste = false; }
+  ostAcc += dt;
+  if (ostAcc > 14 && !window.MODO_FILM){ ostAcc = 0;
+    if (inMoto && S.pausa <= 0 && Math.random() < 0.11){
+      S.ostacoloCoste = true; S.pausa = 2.4;
+      pubEvento('errore','E07','Costa di sicurezza pedana impegnata: arresto temporaneo');
+    } }
+
+  /* --- moto lungo la guida --- */
+  if (inMoto && S.pausa <= 0){
+    const du = TARGA.velocita * S.velFattore * dt / LUNG;
+    if (S.target !== null){
+      const dir = Math.sign(S.target - S.u);
+      S.stato = dir > 0 ? 'salita' : 'discesa';
+      S.u += dir*du;
+      if ((dir > 0 && S.u >= S.target) || (dir < 0 && S.u <= S.target)){ S.u = S.target; arrivo(); }
+    } else {
+      S.u = Math.max(0, Math.min(1, S.u + S.manuale*du));
+      if (S.u <= 0 || S.u >= 1){ S.manuale = 0; arrivo(); }
+    }
+    /* TRANSITO DI PIANO: il carrello passa davanti al fine corsa di ogni piano
+       intermedio. Il device aggiorna piano_corrente e pubblica subito una
+       telemetria, cosi' una corsa 0 -> 3 produce 0, 1, 2, 3 e non solo 0 e 3. */
+    const pTr = pianoDaU(S.u);
+    if (pTr !== null && pTr !== S.piano_corrente){
+      S.piano_corrente = pTr;
+      if (S.target !== null || S.manuale !== 0) pubTelemetria();
+    }
+    S.durataCorsa += dt / S.velFattore;
+    S.oreMotore   += dt / 3600;
+    S.livello_batteria = Math.max(0, S.livello_batteria - dt*0.17);
+    const ty = Math.abs(CURVA.getTangentAt(S.u).y);
+    S.assorbimento_motore = S.assorbCorsa * (0.50 + ty*1.00 + (S.stato==='salita' ? 0.20 : 0));
+  } else {
+    S.assorbimento_motore *= 0.86;
+    if (S.assorbimento_motore < 0.02) S.assorbimento_motore = 0;
+    if (!S.emergenza)
+      S.livello_batteria = Math.min(100,
+        S.livello_batteria + (S.modalita_ricarica === 'veloce' ? 0.55 : 0.22) * dt);
+  }
+
+  /* --- auto-demo: decide da sola quando salire e scendere --- */
+  if (S.auto && !S.emergenza){
+    if (S.target === null && S.manuale === 0){
+      autoT += dt;
+      const step = SCRIPT[autoIdx % SCRIPT.length];
+      if (autoT > step.d){ autoT = 0; autoIdx++; chiamataPiano(step.p); }
+    } else autoT = 0;
+  }
+
+  aggiornaPosa();
+
+  /* --- animazioni pedana: bandelle, parapetto, chiusura --- */
+  const alPiano  = pianoDaU(S.u) !== null;
+  const barriere = inMoto || !alPiano;
+  const k = Math.min(1, dt*3.4);
+  /* chiudendo, le bandelle si mettono in piano per ribaltarsi insieme al calpestio */
+  const bA = S.pedanaChiusa ? 0 : (barriere ? -Math.PI/2 :  0.17);
+  const bB = S.pedanaChiusa ? 0 : (barriere ?  Math.PI/2 : -0.17);
+  bandA.rotation.x += (bA - bandA.rotation.x) * k;
+  bandB.rotation.x += (bB - bandB.rotation.x) * k;
+  pedanaFold.rotation.z += ((S.pedanaChiusa ? Math.PI/2 : 0) - pedanaFold.rotation.z) * Math.min(1, dt*2.2);
+  passeggero.visible = S.aBordo && !S.pedanaChiusa;
+  joy.rotation.z = inMoto ? (S.stato==='salita' ? 0.3 : -0.3) : 0;
+
+  /* --- camera --- */
+  if (cam.modo === 'segui'){
+    pedana.localToWorld(vTmp.set(0.40, 0.48, 0)); cam.Tgt.copy(vTmp);
+  } else if (cam.modo === 'carrello'){
+    carrello.getWorldPosition(vTmp); cam.Tgt.copy(vTmp);
+  }
+  if (S.tour) cam.Th += dt*0.17;
+
+  const kk = Math.min(1, dt*3.0);
+  cam.th += (cam.Th-cam.th)*kk; cam.ph += (cam.Ph-cam.ph)*kk; cam.d += (cam.D-cam.d)*kk;
+  cam.tgt.lerp(cam.Tgt, kk);
+
+  if (cam.modo === 'bordo'){
+    pedana.localToWorld(vTmp.set(0.40, 1.11, 0));
+    pedana.localToWorld(vTmp2.set(5.5, 0.25, 0));
+    camera.position.lerp(vTmp, Math.min(1, dt*9));
+    camera.lookAt(vTmp2);
+  } else {
+    camera.position.set(
+      cam.tgt.x + cam.d*Math.sin(cam.ph)*Math.sin(cam.th),
+      cam.tgt.y + cam.d*Math.cos(cam.ph),
+      cam.tgt.z + cam.d*Math.sin(cam.ph)*Math.cos(cam.th));
+    camera.lookAt(cam.tgt);
+  }
+
+  hudAcc += dt;
+  if (hudAcc > 0.09){ hudAcc = 0; aggiornaHUD(); }
+
+  /* storico breve per il grafico degli ultimi 60 s */
+  storiaT += dt;
+  if (storiaT > 0.5){ storiaT = 0;
+    STORIA.push({ a:S.assorbimento_motore, b:S.livello_batteria });
+    if (STORIA.length > 240) STORIA.shift(); }
+
+  /* telemetria a schermo intero e finestra separata */
+  teleAcc += dt;
+  if (teleAcc > 0.22){ teleAcc = 0;
+    if (teleOn) riempiTele(teleRoot);
+    if (teleWin){
+      if (teleWin.closed) teleWin = null;
+      else riempiTele(teleWin.document.querySelector('.tw-root'));
+    } }
+
+  if (!teleOn) renderer.render(scene, camera);
+}
+
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+/* ------------------------------------------------------------ AVVIO */
+aggiornaPosa(); aggiornaHUD(); anima();
+document.getElementById('loading').style.display = 'none';
+pubTelemetria();
+setTimeout(()=>toast('ok','impianto online',
+  CFG.id+' connesso al broker. '+LUNG.toFixed(1)+' m di guida continua, '+NR+
+  (NR===1?' rampa':' rampe')+(NR>1 ? ', '+(NR-1)+' curve a 180°.' : ', tratta rettilinea.')), 500);
+/* parte in auto-demo: il servoscala decide da solo dove andare */
+setTimeout(()=>{ E('b-auto').click(); }, 2200);
+</script>
+</body>
+</html>

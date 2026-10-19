@@ -1,0 +1,4 @@
+# Dipendenze Python del progetto Servoscala Connesso
+# Installa tutto con:  pip install -r requirements.txt
+
+paho-mqtt>=2.1.0    # client MQTT per pubblicare/sottoscrivere messaggi
